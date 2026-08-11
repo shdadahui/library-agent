@@ -1,0 +1,294 @@
+// Package api 提供 HTTP 接口：REST 业务端点 + SSE 聊天端点。
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/shdadahui/library-agent/internal/agent"
+	"github.com/shdadahui/library-agent/internal/config"
+	"github.com/shdadahui/library-agent/internal/service"
+)
+
+// Server HTTP 服务。
+type Server struct {
+	Svc  *service.Service
+	Loop *agent.Loop
+	Cfg  *config.Config
+	mux  *http.ServeMux
+}
+
+// NewServer 创建服务并注册路由。
+func NewServer(cfg *config.Config, svc *service.Service, loop *agent.Loop) *Server {
+	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, mux: http.NewServeMux()}
+	s.routes()
+	return s
+}
+
+// Handler 返回根处理器。
+func (s *Server) Handler() http.Handler { return s.mux }
+
+func (s *Server) routes() {
+	m := s.mux
+	m.HandleFunc("GET /api/health", s.handleHealth)
+	m.HandleFunc("GET /api/books", s.handleSearchBooks)
+	m.HandleFunc("GET /api/books/{id}", s.handleBookDetail)
+	m.HandleFunc("GET /api/patrons", s.handlePatrons)
+	m.HandleFunc("GET /api/patrons/{id}/loans", s.handlePatronLoans)
+	m.HandleFunc("GET /api/patrons/{id}/history", s.handlePatronHistory)
+	m.HandleFunc("GET /api/patrons/{id}/fines", s.handlePatronFines)
+	m.HandleFunc("GET /api/patrons/{id}/holds", s.handlePatronHolds)
+	m.HandleFunc("POST /api/loans", s.handleBorrow)
+	m.HandleFunc("POST /api/loans/{id}/return", s.handleReturn)
+	m.HandleFunc("POST /api/loans/{id}/renew", s.handleRenew)
+	m.HandleFunc("POST /api/holds", s.handlePlaceHold)
+	m.HandleFunc("POST /api/chat", s.handleChat)
+	m.HandleFunc("/", s.handleStatic)
+}
+
+// ---- REST 处理器 ----
+
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	n, err := s.Svc.CountBooks()
+	if err != nil {
+		n = 0
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok", "provider": s.Cfg.ActiveProvider, "books": n,
+	})
+}
+
+func (s *Server) handleSearchBooks(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	lang := r.URL.Query().Get("lang")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = 50
+	}
+	books, err := s.Svc.SearchBooks(q, lang, limit)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, books)
+}
+
+func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	b, items, err := s.Svc.BookAvailability(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"book": b, "items": items})
+}
+
+func (s *Server) handlePatrons(w http.ResponseWriter, _ *http.Request) {
+	patrons, err := s.Svc.Patrons()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, patrons)
+}
+
+func (s *Server) handlePatronLoans(w http.ResponseWriter, r *http.Request) {
+	pid, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	loans, err := s.Svc.PatronLoans(pid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, loans)
+}
+
+func (s *Server) handlePatronHistory(w http.ResponseWriter, r *http.Request) {
+	pid, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	loans, err := s.Svc.LoanHistory(pid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, loans)
+}
+
+func (s *Server) handlePatronFines(w http.ResponseWriter, r *http.Request) {
+	pid, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	fines, err := s.Svc.Fines(pid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, fines)
+}
+
+func (s *Server) handlePatronHolds(w http.ResponseWriter, r *http.Request) {
+	pid, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	holds, err := s.Svc.PatronHolds(pid)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, holds)
+}
+
+func (s *Server) handleBorrow(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PatronID int64 `json:"patron_id"`
+		ItemID   int64 `json:"item_id"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	loan, err := s.Svc.Borrow(body.PatronID, body.ItemID)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, loan)
+}
+
+func (s *Server) handleReturn(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	res, err := s.Svc.Return(id)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	loan, err := s.Svc.Renew(id)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, loan)
+}
+
+func (s *Server) handlePlaceHold(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PatronID int64 `json:"patron_id"`
+		BookID   int64 `json:"book_id"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	hold, err := s.Svc.PlaceHold(body.PatronID, body.BookID)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, hold)
+}
+
+// ---- 静态资源 ----
+
+// handleStatic 从磁盘 web/ 目录提供前端静态资源。
+// 查找顺序：当前工作目录 web/ → 可执行文件所在目录 web/。
+func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if path == "" {
+		path = "index.html"
+	}
+	if data, err := readWebFile(path); err == nil {
+		serveBytes(w, r, path, data)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func readWebFile(rel string) ([]byte, error) {
+	candidates := []string{filepath.Join("web", rel)}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web", rel))
+	}
+	for _, p := range candidates {
+		if data, err := os.ReadFile(p); err == nil {
+			return data, nil
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
+func serveBytes(w http.ResponseWriter, r *http.Request, path string, data []byte) {
+	ct := "text/plain"
+	switch {
+	case strings.HasSuffix(path, ".html"):
+		ct = "text/html; charset=utf-8"
+	case strings.HasSuffix(path, ".js"):
+		ct = "application/javascript; charset=utf-8"
+	case strings.HasSuffix(path, ".css"):
+		ct = "text/css; charset=utf-8"
+	case strings.HasSuffix(path, ".svg"):
+		ct = "image/svg+xml"
+	case strings.HasSuffix(path, ".png"):
+		ct = "image/png"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Write(data)
+}
+
+// ---- 工具函数 ----
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
+		return false
+	}
+	return true
+}
+
+func pathID(r *http.Request, name string) (int64, error) {
+	v := r.PathValue(name)
+	id, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("无效的 %s: %s", name, v)
+	}
+	return id, nil
+}
