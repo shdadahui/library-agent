@@ -1,0 +1,28 @@
+# 数据库文件
+data/*.db
+data/*.db-*
+data/*.db-shm
+data/*.db-wal
+data/*.log
+
+# 本地配置（含密钥，勿提交）
+config.local.json
+.env
+
+# 种子数据缓存
+data/seeds/*.csv
+data/seeds/cache.json
+
+# 构建产物
+bin/
+*.exe
+*.test
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 工作区数据
+.workbuddy/
