@@ -1,0 +1,393 @@
+// Package service 实现图书馆流通业务规则（借/还/续借/罚款/预约队列）。
+// 本层只做规则校验与编排，数据原子性由 store 层的事务保证。
+package service
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/shdadahui/library-agent/internal/store"
+)
+
+// 业务规则常量。
+const (
+	MaxActiveLoans   = 5  // 读者同时最多在借 5 本
+	MaxRenewals      = 2  // 每本书最多续借 2 次
+	FinePerDayCents  = 10 // 逾期罚款 0.1 元/天（10 分）
+	DefaultLoanDays  = 14 // 默认借期 14 天
+	DateLayout       = "2006-01-02"
+)
+
+// 业务错误（对外直接展示中文消息）。
+var (
+	ErrPatronNotFound  = errors.New("读者不存在")
+	ErrItemNotFound    = errors.New("馆藏副本不存在")
+	ErrBiblioNotFound  = errors.New("书目不存在")
+	ErrLoanNotFound    = errors.New("借阅记录不存在")
+	ErrItemUnavailable = errors.New("该副本当前不可借出")
+	ErrLoanLimitReached = errors.New("同时最多借 5 本，请先归还部分图书")
+	ErrOverdue         = errors.New("您有逾期未还的图书，请先归还")
+	ErrMaxRenewals     = errors.New("每本书最多续借 2 次")
+	ErrHoldPending     = errors.New("该书有读者预约排队，无法续借")
+	ErrLoanNotActive   = errors.New("该借阅记录已关闭")
+	ErrAlreadyHeld     = errors.New("您已预约过这本书")
+	ErrNoAvailableItem = errors.New("该书全部副本已借出，无法直接借阅，可为您预约")
+)
+
+// Service 图书馆业务服务。
+type Service struct {
+	st *store.Store
+}
+
+// New 创建业务服务。
+func New(st *store.Store) *Service { return &Service{st: st} }
+
+// Patrons 全部读者（演示身份切换）。
+func (s *Service) Patrons() ([]store.Patron, error) { return s.st.ListPatrons() }
+
+// Patron 按 ID 取单个读者。
+func (s *Service) Patron(id int64) (*store.Patron, error) { return s.st.GetPatron(id) }
+
+// CountBooks 书目总数。
+func (s *Service) CountBooks() (int, error) { return s.st.CountBiblios() }
+
+// SearchBooks 检索书目并附带可借副本数。
+type BookSearchResult struct {
+	store.Biblio
+	Available int `json:"available"`
+	Total     int `json:"total"`
+}
+
+func (s *Service) SearchBooks(q, lang string, limit int) ([]BookSearchResult, error) {
+	books, err := s.st.SearchBooks(q, lang, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BookSearchResult, 0, len(books))
+	for _, b := range books {
+		items, err := s.st.ListItems(b.ID)
+		if err != nil {
+			return nil, err
+		}
+		r := BookSearchResult{Biblio: b}
+		for _, it := range items {
+			r.Total++
+			if it.Status == "available" {
+				r.Available++
+			}
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// ItemView 副本视图（含当前借阅人/应还日）。
+type ItemView struct {
+	store.Item
+	Borrower   string `json:"borrower,omitempty"`
+	DueDate    string `json:"due_date,omitempty"`
+	WaitQueue  int    `json:"wait_queue"`
+}
+
+// BookAvailability 书目详情 + 各副本可用性。
+func (s *Service) BookAvailability(biblioID int64) (*store.Biblio, []ItemView, error) {
+	b, err := s.st.GetBiblio(biblioID)
+	if err != nil {
+		return nil, nil, ErrBiblioNotFound
+	}
+	items, err := s.st.ListItems(biblioID)
+	if err != nil {
+		return nil, nil, err
+	}
+	holds, _ := s.st.WaitingHolds(biblioID)
+	views := make([]ItemView, 0, len(items))
+	for _, it := range items {
+		v := ItemView{Item: it, WaitQueue: len(holds)}
+		if it.Status == "borrowed" {
+			if loan, err := s.st.ActiveLoanByItem(it.ID); err == nil {
+				v.DueDate = loan.DueDate
+				if p, err := s.st.GetPatron(loan.PatronID); err == nil {
+					v.Borrower = p.Name
+				}
+			}
+		}
+		views = append(views, v)
+	}
+	return b, views, nil
+}
+
+// LoanView 借阅视图（含书名与可续借标志）。
+type LoanView struct {
+	store.Loan
+	Title     string `json:"title"`
+	Barcode   string `json:"barcode"`
+	Renewable bool   `json:"renewable"`
+	RenewMsg  string `json:"renew_msg,omitempty"`
+}
+
+// PatronLoans 读者当前在借图书。
+func (s *Service) PatronLoans(patronID int64) ([]LoanView, error) {
+	loans, err := s.st.ActiveLoans(patronID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LoanView, 0, len(loans))
+	today := store.Now()
+	for _, l := range loans {
+		v := LoanView{Loan: l}
+		if it, err := s.st.GetItem(l.ItemID); err == nil {
+			v.Barcode = it.Barcode
+			if b, err := s.st.GetBiblio(it.BiblioID); err == nil {
+				v.Title = b.Title
+			}
+		}
+		v.Renewable = s.renewErr(l, today) == nil
+		v.RenewMsg = ""
+		if err := s.renewErr(l, today); err != nil {
+			v.RenewMsg = err.Error()
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// LoanHistory 读者借阅历史。
+func (s *Service) LoanHistory(patronID int64) ([]LoanView, error) {
+	loans, err := s.st.LoanHistory(patronID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LoanView, 0, len(loans))
+	for _, l := range loans {
+		v := LoanView{Loan: l}
+		if it, err := s.st.GetItem(l.ItemID); err == nil {
+			v.Barcode = it.Barcode
+			if b, err := s.st.GetBiblio(it.BiblioID); err == nil {
+				v.Title = b.Title
+			}
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// renewErr 返回该借阅不可续借的原因；nil 表示可续借。
+func (s *Service) renewErr(l store.Loan, today string) error {
+	if l.Status != "active" {
+		return ErrLoanNotActive
+	}
+	if l.Renewals >= MaxRenewals {
+		return ErrMaxRenewals
+	}
+	if l.DueDate < today {
+		return ErrOverdue
+	}
+	it, err := s.st.GetItem(l.ItemID)
+	if err != nil {
+		return err
+	}
+	if holds, err := s.st.WaitingHolds(it.BiblioID); err == nil && len(holds) > 0 {
+		return ErrHoldPending
+	}
+	return nil
+}
+
+// Borrow 借书。
+func (s *Service) Borrow(patronID, itemID int64) (*store.Loan, error) {
+	if _, err := s.st.GetPatron(patronID); err != nil {
+		return nil, ErrPatronNotFound
+	}
+	it, err := s.st.GetItem(itemID)
+	if err != nil {
+		return nil, ErrItemNotFound
+	}
+	if it.Status != "available" {
+		return nil, ErrItemUnavailable
+	}
+	active, err := s.st.ActiveLoans(patronID)
+	if err != nil {
+		return nil, err
+	}
+	if len(active) >= MaxActiveLoans {
+		return nil, ErrLoanLimitReached
+	}
+	days := it.LoanDurationDays
+	if days <= 0 {
+		days = DefaultLoanDays
+	}
+	today := store.Now()
+	due := addDays(today, days)
+	loanID, err := s.st.Checkout(itemID, patronID, today, due)
+	if err != nil {
+		return nil, err
+	}
+	return s.st.GetLoan(loanID)
+}
+
+// ReturnResult 还书结果。
+type ReturnResult struct {
+	LoanID     int64  `json:"loan_id"`
+	FineCents  int    `json:"fine_cents"`
+	HoldWakeUp string `json:"hold_wake_up,omitempty"`
+}
+
+// Return 还书：计算逾期罚款（0.1 元/天），唤醒预约队列。
+func (s *Service) Return(loanID int64) (*ReturnResult, error) {
+	loan, err := s.st.GetLoan(loanID)
+	if err != nil {
+		return nil, ErrLoanNotFound
+	}
+	if loan.Status != "active" {
+		return nil, ErrLoanNotActive
+	}
+	it, err := s.st.GetItem(loan.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	today := store.Now()
+	res := &ReturnResult{LoanID: loanID}
+	// 逾期罚款
+	if loan.DueDate < today {
+		days := daysBetween(loan.DueDate, today)
+		res.FineCents = days * FinePerDayCents
+		if res.FineCents > 0 {
+			f := &store.Fine{
+				PatronID:    loan.PatronID,
+				LoanID:      loanID,
+				AmountCents: res.FineCents,
+				CreatedDate: today,
+			}
+			if _, err := s.st.CreateFine(f); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := s.st.Checkin(loanID, today); err != nil {
+		return nil, err
+	}
+	// 唤醒预约队列
+	hold, err := s.st.FulfillHoldTx(it.BiblioID, it.ID)
+	if err != nil {
+		return nil, err
+	}
+	if hold != nil {
+		if p, err := s.st.GetPatron(hold.PatronID); err == nil {
+			res.HoldWakeUp = fmt.Sprintf("已通知预约者 %s 到馆取书", p.Name)
+		}
+	}
+	return res, nil
+}
+
+// Renew 续借（关旧开新）。
+func (s *Service) Renew(loanID int64) (*store.Loan, error) {
+	loan, err := s.st.GetLoan(loanID)
+	if err != nil {
+		return nil, ErrLoanNotFound
+	}
+	if loan.Status != "active" {
+		return nil, ErrLoanNotActive
+	}
+	today := store.Now()
+	if err := s.renewErr(*loan, today); err != nil {
+		return nil, err
+	}
+	it, err := s.st.GetItem(loan.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	days := it.LoanDurationDays
+	if days <= 0 {
+		days = DefaultLoanDays
+	}
+	newDue := addDays(loan.DueDate, days)
+	newID, err := s.st.RenewCheckout(loanID, loan.DueDate, newDue, loan.Renewals+1)
+	if err != nil {
+		return nil, err
+	}
+	return s.st.GetLoan(newID)
+}
+
+// FinesView 罚款视图。
+type FinesView struct {
+	UnpaidCents int          `json:"unpaid_cents"`
+	Items       []store.Fine `json:"items"`
+}
+
+// Fines 读者未缴罚款。
+func (s *Service) Fines(patronID int64) (*FinesView, error) {
+	if _, err := s.st.GetPatron(patronID); err != nil {
+		return nil, ErrPatronNotFound
+	}
+	fines, err := s.st.Fines(patronID, true)
+	if err != nil {
+		return nil, err
+	}
+	sum, err := s.st.SumUnpaidFines(patronID)
+	if err != nil {
+		return nil, err
+	}
+	return &FinesView{UnpaidCents: sum, Items: fines}, nil
+}
+
+// PlaceHold 预约（书全部借出时排队）。
+func (s *Service) PlaceHold(patronID, biblioID int64) (*store.Hold, error) {
+	if _, err := s.st.GetPatron(patronID); err != nil {
+		return nil, ErrPatronNotFound
+	}
+	b, err := s.st.GetBiblio(biblioID)
+	if err != nil {
+		return nil, ErrBiblioNotFound
+	}
+	_ = b
+	// 已有副本可借则提示直接借阅
+	items, err := s.st.ListItems(biblioID)
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		if it.Status == "available" {
+			return nil, ErrNoAvailableItem
+		}
+	}
+	// 检查是否已预约
+	holds, err := s.st.PatronHolds(patronID)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range holds {
+		if h.BiblioID == biblioID && h.Status == "waiting" {
+			return nil, ErrAlreadyHeld
+		}
+	}
+	h := &store.Hold{BiblioID: biblioID, PatronID: patronID, CreatedAt: store.Now()}
+	id, err := s.st.CreateHold(h)
+	if err != nil {
+		return nil, err
+	}
+	h.ID = id
+	return h, nil
+}
+
+// PatronHolds 读者预约列表。
+func (s *Service) PatronHolds(patronID int64) ([]store.Hold, error) {
+	return s.st.PatronHolds(patronID)
+}
+
+// ---- 日期工具 ----
+
+// addDays 日期加 n 天（YYYY-MM-DD）。
+func addDays(date string, n int) string {
+	t, err := time.Parse(DateLayout, date)
+	if err != nil {
+		return date
+	}
+	return t.AddDate(0, 0, n).Format(DateLayout)
+}
+
+// daysBetween 两个日期相差的天数（b 晚于 a 时为正）。
+func daysBetween(a, b string) int {
+	ta, _ := time.Parse(DateLayout, a)
+	tb, _ := time.Parse(DateLayout, b)
+	return int(tb.Sub(ta).Hours() / 24)
+}
