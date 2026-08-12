@@ -14,9 +14,17 @@ import (
 
 // 业务错误。
 var (
-	ErrUserExists       = errors.New("用户名已存在")
+	ErrUserExists        = errors.New("用户名已存在")
 	ErrInvalidCredential = errors.New("用户名或密码错误")
-	ErrSessionInvalid   = errors.New("会话无效或已过期")
+	ErrSessionInvalid    = errors.New("会话无效或已过期")
+	ErrTooManyAttempts   = errors.New("登录失败次数过多，请 15 分钟后再试")
+)
+
+// 登录限流：连续失败 N 次锁定 15 分钟。
+const (
+	maxLoginFails  = 5
+	lockDuration   = 15 * time.Minute
+	failKeyPrefix  = "login_fail:"
 )
 
 // SessionStore 会话存储接口（Redis 实现 + 内存兜底）。
@@ -72,21 +80,36 @@ func (m *Manager) Register(username, password, name string) (*store.User, error)
 	return m.st.GetUserByID(uid)
 }
 
-// Login 校验凭据并签发会话令牌。
+// Login 校验凭据并签发会话令牌（带失败限流：连续 5 次错误锁定 15 分钟）。
 func (m *Manager) Login(username, password string) (string, *store.User, error) {
+	failKey := failKeyPrefix + username
+	// 限流检查
+	if fails, _ := m.sess.Get(failKey); fails >= maxLoginFails {
+		return "", nil, ErrTooManyAttempts
+	}
 	u, err := m.st.GetUserByUsername(username)
 	if err != nil {
+		m.recordFail(failKey)
 		return "", nil, ErrInvalidCredential
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) != nil {
+		m.recordFail(failKey)
 		return "", nil, ErrInvalidCredential
 	}
+	// 登录成功：清除失败计数
+	_ = m.sess.Del(failKey)
 	token := NewToken()
 	if err := m.sess.Set(token, u.ID, m.ttl); err != nil {
 		log.Printf("[auth] 会话写入失败: %v", err)
 		return "", nil, err
 	}
 	return token, u, nil
+}
+
+// recordFail 记录一次登录失败（达到阈值后锁定）。
+func (m *Manager) recordFail(key string) {
+	fails, _ := m.sess.Get(key)
+	_ = m.sess.Set(key, fails+1, lockDuration)
 }
 
 // Logout 注销会话。
