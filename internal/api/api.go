@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	"strings"
 
 	"github.com/shdadahui/library-agent/internal/agent"
+	"github.com/shdadahui/library-agent/internal/auth"
 	"github.com/shdadahui/library-agent/internal/config"
 	"github.com/shdadahui/library-agent/internal/service"
+	"github.com/shdadahui/library-agent/internal/store"
 )
 
 // Server HTTP 服务。
@@ -20,19 +23,75 @@ type Server struct {
 	Svc     *service.Service
 	Loop    *agent.Loop
 	Cfg     *config.Config
+	Auth    *auth.Manager
 	metrics *Metrics
 	mux     *http.ServeMux
 }
 
 // NewServer 创建服务并注册路由。
-func NewServer(cfg *config.Config, svc *service.Service, loop *agent.Loop) *Server {
-	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, metrics: NewMetrics(), mux: http.NewServeMux()}
+func NewServer(cfg *config.Config, svc *service.Service, loop *agent.Loop, am *auth.Manager) *Server {
+	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, Auth: am, metrics: NewMetrics(), mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
 
-// Handler 返回根处理器（含请求日志中间件）。
-func (s *Server) Handler() http.Handler { return s.withLogging(s.mux) }
+// Handler 返回根处理器（含请求日志与认证中间件）。
+func (s *Server) Handler() http.Handler {
+	return s.withLogging(s.withAuth(s.mux))
+}
+
+// withAuth 认证中间件：受保护 API 需携带 Bearer 令牌。
+func (s *Server) withAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if !strings.HasPrefix(path, "/api/") || isPublicPath(path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := bearerToken(r)
+		user, err := s.Auth.Authenticate(token)
+		if err != nil {
+			writeErr(w, http.StatusUnauthorized, "请先登录（或会话已过期）")
+			return
+		}
+		// 将用户注入上下文，供各 handler 使用
+		ctx := context.WithValue(r.Context(), ctxUserKey{}, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+type ctxUserKey struct{}
+
+// currentUser 从上下文取当前登录用户。
+func currentUser(r *http.Request) *store.User {
+	if u, ok := r.Context().Value(ctxUserKey{}).(*store.User); ok {
+		return u
+	}
+	return nil
+}
+
+// bearerToken 提取 Authorization: Bearer xxx。
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if len(h) > 7 && strings.EqualFold(h[:7], "Bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	return ""
+}
+
+// isPublicPath 无需登录的公开路径。
+func isPublicPath(path string) bool {
+	switch {
+	case path == "/api/health", path == "/api/metrics":
+		return true
+	case path == "/api/auth/register", path == "/api/auth/login":
+		return true
+	case strings.HasPrefix(path, "/api/books"):
+		return true
+	default:
+		return false
+	}
+}
 
 func (s *Server) routes() {
 	m := s.mux
@@ -50,6 +109,14 @@ func (s *Server) routes() {
 	m.HandleFunc("POST /api/loans/{id}/renew", s.handleRenew)
 	m.HandleFunc("POST /api/holds", s.handlePlaceHold)
 	m.HandleFunc("POST /api/chat", s.handleChat)
+	m.HandleFunc("POST /api/auth/register", s.handleRegister)
+	m.HandleFunc("POST /api/auth/login", s.handleLogin)
+	m.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	m.HandleFunc("GET /api/auth/me", s.handleMe)
+	m.HandleFunc("GET /api/conversations", s.handleListConversations)
+	m.HandleFunc("POST /api/conversations", s.handleCreateConversation)
+	m.HandleFunc("GET /api/conversations/{id}/messages", s.handleConversationMessages)
+	m.HandleFunc("DELETE /api/conversations/{id}", s.handleDeleteConversation)
 	m.HandleFunc("/", s.handleStatic)
 }
 

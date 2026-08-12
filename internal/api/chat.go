@@ -7,25 +7,28 @@ import (
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/agent"
+	"github.com/shdadahui/library-agent/internal/store"
 )
 
-// HistoryMsg 历史对话消息（前端携带，用于多轮上下文）。
-type HistoryMsg struct {
-	Role    string `json:"role"` // user / assistant
-	Content string `json:"content"`
+// ChatRequest 聊天请求体。
+// 身份来自登录令牌，历史会话按 conversation_id 从数据库加载并持久化。
+type ChatRequest struct {
+	ConversationID *int64 `json:"conversation_id"`
+	Message        string `json:"message"`
 }
 
-// ChatRequest 聊天请求体。
-type ChatRequest struct {
-	Message  string       `json:"message"`
-	PatronID int64        `json:"patron_id"`
-	History  []HistoryMsg `json:"history,omitempty"`
-}
+// maxContextMessages 注入上下文的最近消息条数（控制 token 消耗）。
+const maxContextMessages = 20
 
 // handleChat SSE 流式聊天端点。
 // 事件流：event: message / tool_call / tool_result / done / error，data 为 JSON。
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	user := currentUser(r)
+	if user == nil {
+		writeErr(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
 	var body ChatRequest
 	if !decodeBody(w, r, &body) {
 		return
@@ -34,16 +37,42 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "message 不能为空")
 		return
 	}
-	patron, err := s.Svc.Patron(body.PatronID)
+	patron, err := s.Svc.Patron(user.PatronID)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "读者不存在，请先选择读者")
+		writeErr(w, http.StatusNotFound, "读者不存在")
 		return
 	}
 
-	// 历史消息转为 agent.Message（仅 user/assistant 文本）
-	history := make([]agent.Message, 0, len(body.History))
-	for _, h := range body.History {
-		history = append(history, agent.Message{Role: h.Role, Content: h.Content})
+	// 会话归属：指定会话须属于当前用户；未指定则自动新建
+	conversationID := body.ConversationID
+	if conversationID != nil {
+		convo, err := s.Svc.GetConversation(*conversationID)
+		if err != nil || convo.UserID != user.ID {
+			writeErr(w, http.StatusNotFound, "会话不存在")
+			return
+		}
+	}
+	isNewConversation := conversationID == nil
+	if isNewConversation {
+		convo, err := s.Svc.CreateConversation(user.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		conversationID = &convo.ID
+	}
+	cid := *conversationID
+
+	// 历史上下文（仅 user/assistant 文本，最近 N 条）
+	history := []agent.Message{}
+	if msgs, err := s.Svc.ListMessages(cid); err == nil {
+		from := 0
+		if len(msgs) > maxContextMessages {
+			from = len(msgs) - maxContextMessages
+		}
+		for _, m := range msgs[from:] {
+			history = append(history, agent.Message{Role: m.Role, Content: m.Content})
+		}
 	}
 
 	// SSE 响应头
@@ -76,9 +105,19 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	// 请求 ctx 直接取自 r.Context()，客户端断开会自动取消 LLM 请求
 	finalText, runErr := s.Loop.Run(r.Context(), patron, history, body.Message, emit)
 	latency := time.Since(start)
+
+	// 持久化本轮消息（user + assistant）
+	_ = s.Svc.AddMessage(cid, "user", body.Message)
+	reply := finalText
+	if reply == "" {
+		reply = "（无回复）"
+	}
+	_ = s.Svc.AddMessage(cid, "assistant", reply)
+	if isNewConversation {
+		_ = s.Svc.RenameConversation(cid, body.Message)
+	}
 
 	// 监控与日志
 	s.metrics.IncChats()
@@ -94,13 +133,23 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		errMsg = runErr.Error()
 	}
 	s.appendChatLog(map[string]any{
-		"time":       time.Now().Format(time.RFC3339),
-		"patron_id":  patron.ID,
-		"patron":     patron.Name,
-		"input":      body.Message,
-		"tools":      tools,
-		"output":     finalText,
-		"latency_ms": latency.Milliseconds(),
-		"error":      errMsg,
+		"time":            time.Now().Format(time.RFC3339),
+		"user":            user.Username,
+		"patron_id":       patron.ID,
+		"conversation_id": cid,
+		"input":           body.Message,
+		"tools":           tools,
+		"output":          reply,
+		"latency_ms":      latency.Milliseconds(),
+		"error":           errMsg,
 	})
+
+	// 前端需要知道会话 ID（新建会话时）
+	if isNewConversation {
+		data, _ := json.Marshal(map[string]any{"conversation_id": cid})
+		fmt.Fprintf(w, "event: conversation_id\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
 }
+
+var _ = store.Now
