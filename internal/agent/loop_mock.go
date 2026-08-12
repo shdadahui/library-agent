@@ -23,9 +23,11 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 
 	switch {
 	case isChitChat(msg):
-		out = "您好！我是图书馆智能助手，可以帮您查书、借书、还书、续借、预约，或查询罚款。请问需要什么帮助？"
+		out = "您好！我是图书馆智能助手，可以帮您查书、预约、续借、还书，或查询罚款。请问需要什么帮助？"
 	case isOutOfScope(msg):
 		out = "抱歉，我只擅长处理图书馆相关的事务（查书、借还、续借、预约、罚款等），这个问题超出我的能力范围。"
+	case strings.Contains(msg, "统计") || strings.Contains(msg, "多少藏书") || strings.Contains(msg, "藏书量") || strings.Contains(msg, "多少本") || strings.Contains(msg, "多少读者") || strings.Contains(msg, "借出多少"):
+		out = l.mockStats(patron, emit)
 	case strings.Contains(msg, "续借"):
 		out = l.mockRenew(ctx, patron, emit)
 	case strings.Contains(msg, "还书") || strings.Contains(msg, "归还") || strings.Contains(msg, "还了") || strings.Contains(msg, "还掉"):
@@ -128,29 +130,62 @@ func (l *Loop) mockBorrow(ctx context.Context, patron *store.Patron, msg string,
 		return "查询馆藏出错：" + err.Error()
 	}
 	emitResult(emit, "get_book_availability", items)
-	var itemID int64
+	var availBarcode, availLoc string
+	allBorrowed := true
 	for _, it := range items {
 		if it.Status == "available" {
-			itemID = it.ID
-			break
+			allBorrowed = false
+			if availBarcode == "" {
+				availBarcode, availLoc = it.Barcode, it.Location
+			}
 		}
 	}
-	if itemID == 0 {
-		emitTool(emit, "place_hold", map[string]any{"patron_id": patron.ID, "book_id": books[0].ID})
-		hold, err := l.Svc.PlaceHold(patron.ID, books[0].ID)
+	// 有可借副本 → 引导到馆借阅（本馆规定线上不能直接借出）
+	if !allBorrowed {
+		emitTool(emit, "guide_borrow", map[string]any{"book_id": books[0].ID})
+		guide, err := l.guideBorrow(books[0].ID)
 		if err != nil {
-			return fmt.Sprintf("《%s》全部借出，预约失败：%s", books[0].Title, err.Error())
+			return "查询出错：" + err.Error()
 		}
-		emitResult(emit, "place_hold", hold)
-		return fmt.Sprintf("《%s》目前全部借出。我已为您预约排队（第 %d 位），归还后会通知您。", books[0].Title, hold.QueuePos)
+		emitResult(emit, "guide_borrow", guide)
+		_ = availBarcode
+		return fmt.Sprintf("《%s》目前有可借副本（馆藏位置：%s）。本馆规定借书须到馆办理：请凭读者证在自助借还机或服务台完成借阅手续。", books[0].Title, availLoc)
 	}
-	emitTool(emit, "borrow_book", map[string]any{"patron_id": patron.ID, "item_id": itemID})
-	loan, err := l.Svc.Borrow(patron.ID, itemID)
+	// 全部借出 → 预约
+	emitTool(emit, "place_hold", map[string]any{"patron_id": patron.ID, "book_id": books[0].ID})
+	hold, err := l.Svc.PlaceHold(patron.ID, books[0].ID)
 	if err != nil {
-		return "借阅失败：" + err.Error()
+		return fmt.Sprintf("《%s》全部借出，预约失败：%s", books[0].Title, err.Error())
 	}
-	emitResult(emit, "borrow_book", loan)
-	return fmt.Sprintf("借阅成功！《%s》应还日期为 %s，请按时归还。", books[0].Title, loan.DueDate)
+	emitResult(emit, "place_hold", hold)
+	return fmt.Sprintf("《%s》目前全部借出。我已为您预约排队（第 %d 位），归还后会通知您到馆取书。", books[0].Title, hold.QueuePos)
+}
+
+// guideBorrow 返回到馆借阅引导信息（不执行借出）。
+func (l *Loop) guideBorrow(bookID int64) (map[string]any, error) {
+	b, items, err := l.Svc.BookAvailability(bookID)
+	if err != nil {
+		return nil, err
+	}
+	avail := []map[string]any{}
+	for _, it := range items {
+		if it.Status == "available" {
+			avail = append(avail, map[string]any{"barcode": it.Barcode, "location": it.Location})
+		}
+	}
+	return map[string]any{"book": b, "available_items": avail, "guide": "请凭读者证到馆，在自助借还机或服务台办理借阅手续。"}, nil
+}
+
+// mockStats 全馆统计。
+func (l *Loop) mockStats(patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "get_library_stats", map[string]any{})
+	st, err := l.Svc.LibraryStats()
+	if err != nil {
+		return "查询出错：" + err.Error()
+	}
+	emitResult(emit, "get_library_stats", st)
+	return fmt.Sprintf("本馆现有藏书 %d 种、馆藏副本 %d 本（可借 %d 本、在借 %d 本），等待预约 %d 个，注册读者 %d 位，全馆未缴罚款合计 %.1f 元。",
+		st.Books, st.Copies, st.Available, st.Borrowed, st.HoldsWaiting, st.Patrons, float64(st.UnpaidFinesCents)/100)
 }
 
 // mockAvailability 查询馆藏：先检索书目，再查各副本状态。

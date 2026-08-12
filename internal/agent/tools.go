@@ -94,30 +94,49 @@ func AllTools() []*ToolDef {
 			},
 		},
 		{
-			Name:        "borrow_book",
-			Description: "为读者借出一本书（馆藏副本）。用户说\"我要借《XX》\"\"帮我借这本书\"时，先 search_books 找到 book_id，再 get_book_availability 找到可借的 item_id，再调用本工具。",
+			Name:        "guide_borrow",
+			Description: "引导用户到馆借书。本馆规定借书须到馆在自助借还机或服务台办理，线上不能直接借出。当用户想借某本书且该书有可借副本时，调用本工具返回可借副本的馆藏位置与应还期，引导用户到馆借阅（不执行借出操作）。参数 book_id 与 title 二选一。",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"patron_id": map[string]any{"type": "integer", "description": "读者 ID"},
-					"item_id":   map[string]any{"type": "integer", "description": "馆藏副本 ID（可借状态的）"},
+					"book_id": map[string]any{"type": "integer", "description": "书目 ID（search_books 返回的 id）"},
+					"title":   map[string]any{"type": "string", "description": "书名，优先用 book_id"},
 				},
-				"required": []string{"patron_id", "item_id"},
 			},
 			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
-				pid, err := intArg(args, "patron_id")
+				id, err := resolveBookID(s, args)
 				if err != nil {
 					return nil, err
 				}
-				iid, err := intArg(args, "item_id")
+				b, items, err := s.BookAvailability(id)
 				if err != nil {
 					return nil, err
 				}
-				loan, err := s.Borrow(pid, iid)
-				if err != nil {
-					return nil, err
+				avail := []map[string]any{}
+				for _, it := range items {
+					if it.Status == "available" {
+						avail = append(avail, map[string]any{
+							"barcode": it.Barcode, "location": it.Location,
+							"loan_duration_days": it.LoanDurationDays,
+						})
+					}
 				}
-				return map[string]any{"loan": loan, "message": "借阅成功"}, nil
+				return map[string]any{
+					"book":           b,
+					"available_items": avail,
+					"guide":          "请凭读者证到馆，在自助借还机或服务台办理借阅手续。",
+				}, nil
+			},
+		},
+		{
+			Name:        "get_library_stats",
+			Description: "查询图书馆全馆统计信息：藏书种数、馆藏副本总数、可借/在借副本数、等待预约数、读者数、未缴罚款总额。用户问\"图书馆有多少藏书\"\"全馆借出多少本\"\"有多少读者\"等统计问题时使用。无参数。",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Handler: func(_ context.Context, s *service.Service, _ map[string]any) (any, error) {
+				return s.LibraryStats()
 			},
 		},
 		{

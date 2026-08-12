@@ -45,13 +45,21 @@ func NewLoop(cfg *config.Config, svc *service.Service) *Loop {
 }
 
 // Run 执行一次对话：LLM tool calling 循环。
+// history 为之前的对话（user/assistant 文本消息，不含工具中间过程），用于多轮上下文；
 // emit 用于推送流式事件；返回最终回复文本。
-func (l *Loop) Run(ctx context.Context, patron *store.Patron, userMsg string, emit func(Event)) (string, error) {
+func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message, userMsg string, emit func(Event)) (string, error) {
 	system := l.buildSystemPrompt(patron)
-	messages := []Message{
-		{Role: "system", Content: system},
-		{Role: "user", Content: userMsg},
+	messages := []Message{{Role: "system", Content: system}}
+	for _, h := range history {
+		if h.Role != "user" && h.Role != "assistant" {
+			continue
+		}
+		if strings.TrimSpace(h.Content) == "" {
+			continue
+		}
+		messages = append(messages, h)
 	}
+	messages = append(messages, Message{Role: "user", Content: userMsg})
 
 	if l.Cfg.Active().IsMock() {
 		return l.runMock(ctx, patron, userMsg, emit), nil
@@ -147,12 +155,13 @@ func (l *Loop) buildSystemPrompt(patron *store.Patron) string {
 	sb.WriteString("你可以通过工具查询书目、馆藏、借阅记录，并执行借书、还书、续借、预约等操作。\n")
 	sb.WriteString("规则：\n")
 	sb.WriteString("1. 用户提到借书/还书/续借/预约时，先查询确认再操作，操作后明确告知结果。\n")
-	sb.WriteString("2. 借书需要可借的馆藏副本；书全被借出时建议预约。\n")
+	sb.WriteString("2. 借书必须到馆办理（自助借还机或服务台），线上不能直接借出。用户表达借书意图时：有可借副本 → 调用 guide_borrow 告知馆藏位置并引导到馆；全部被借出 → 直接调用 place_hold 完成预约排队（无需再征求确认）。\n")
 	sb.WriteString("3. 续借每本最多 2 次；逾期或被人预约时不可续借。\n")
 	sb.WriteString("4. 逾期罚款按 0.1 元/天计算，还书时自动结算。\n")
 	sb.WriteString("5. 用户明确说「预约」某本书时，检索并确认无可用副本后应直接调用 place_hold 完成预约，无需再征求确认。\n")
 	sb.WriteString("6. 还书/续借时若用户未指定具体书目，先查询在借清单，再询问用户要处理哪一本；不要擅自选择。\n")
-	sb.WriteString("7. 回答使用简体中文，语气友好简洁，金额用「元」。\n")
+	sb.WriteString("7. 用户问图书馆的藏书量、借出量、读者数等统计问题时，调用 get_library_stats 回答。\n")
+	sb.WriteString("8. 回答使用简体中文，语气友好简洁，金额用「元」；涉及列表、对比时可用 Markdown 表格。\n")
 	if patron != nil {
 		fmt.Fprintf(&sb, "当前登录读者：%s（读者ID %d）。涉及\"我\"的借阅、罚款、预约操作都指这位读者，工具参数 patron_id 用 %d。\n",
 			patron.Name, patron.ID, patron.ID)

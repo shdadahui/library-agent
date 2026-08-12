@@ -52,6 +52,9 @@ func (s *Service) Patron(id int64) (*store.Patron, error) { return s.st.GetPatro
 // CountBooks 书目总数。
 func (s *Service) CountBooks() (int, error) { return s.st.CountBiblios() }
 
+// LibraryStats 全馆统计。
+func (s *Service) LibraryStats() (*store.LibraryStats, error) { return s.st.LibraryStats() }
+
 // SearchBooks 检索书目并附带可借副本数。
 type BookSearchResult struct {
 	store.Biblio
