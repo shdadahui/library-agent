@@ -18,5 +18,17 @@
   },
   "activeProvider": "deepseek",
   "temperature": 0.7,
-  "maxIterations": 8
+  "maxIterations": 8,
+  "db": {
+    "driver": "sqlite",
+    "dsn": "data/library.db"
+  },
+  "redis": {
+    "addr": "127.0.0.1:6379",
+    "password": "",
+    "db": 0
+  },
+  "auth": {
+    "session_ttl_hours": 168
+  }
 }

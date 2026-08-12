@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // SeedBook 种子书目。
@@ -131,6 +132,32 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 	seedLoan(st, itemOf("边城"), wang, day(-60), day(-46), 1, "returned")
 	// 孙八：蛙（该书面仅 1 副本，借出后可供预约场景演示）
 	seedLoan(st, itemOf("蛙"), idByPatron["孙八"], day(-8), day(6), 0, "active")
+
+	// 4. 演示登录账号（bcrypt 哈希，绑定演示读者）
+	demoAccounts := []struct {
+		username, password, patronName string
+	}{
+		{"alice", "alice123", "张三"},
+		{"bob", "bob123", "李四"},
+	}
+	for _, a := range demoAccounts {
+		if _, err := st.GetUserByUsername(a.username); err == nil {
+			continue
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(a.password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("生成密码哈希失败: %w", err)
+		}
+		pid, ok := idByPatron[a.patronName]
+		if !ok {
+			continue
+		}
+		if _, err := st.CreateUser(&store.User{
+			Username: a.username, PasswordHash: string(hash), PatronID: pid, CreatedAt: store.NowDateTime(),
+		}); err != nil {
+			return nil, fmt.Errorf("创建演示账号失败: %w", err)
+		}
+	}
 
 	return &Result{Books: len(idByTitle), Patrons: len(patrons)}, nil
 }
