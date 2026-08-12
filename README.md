@@ -137,6 +137,14 @@ go run ./cmd/eval -only multi-01 # 只跑单个用例
 - 密码强度：至少 6 位且含字母与数字，禁止空格
 - 认证中间件保护所有操作端点；bcrypt 哈希存储；前端 marked 渲染（LLM 输出）
 
+## 运维
+
+- **优雅停机**：SIGINT/SIGTERM 后先停新连接，等待活跃请求（含 SSE 流）最长 10s
+- **版本化迁移**：`schema_migrations` 表记录 DDL 变更进度，新结构变更追加 `internal/store/migrate.go` 列表即可
+- **MySQL 备份**：`bash scripts/backup.sh`（mysqldump + gzip，保留 7 天）；建议 cron `0 2 * * *`
+- **监控**：`GET /api/metrics` 含对话/token 用量/工具调用/限流计数；对话日志 `data/logs/chat-*.jsonl`
+- **安全**：chat 端点每用户 30 次/分钟限流（Redis）；LLM 输出经 DOMPurify 清洗；工具参数按 schema 校验
+
 ## 监控与日志
 
 - `GET /api/metrics`：运行时统计（对话数、各工具调用次数、LLM/工具错误数、平均延迟、运行时长）

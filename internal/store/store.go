@@ -234,16 +234,9 @@ func (s *Store) createSchema(t schemaTokens) error {
 			return fmt.Errorf("建表失败: %w（语句: %s）", err, head)
 		}
 	}
-	// 兼容旧库：补充新增列（忽略 duplicate column）
-	if _, err := s.DB.Exec(`ALTER TABLE biblios ADD COLUMN online_url VARCHAR(512) NOT NULL DEFAULT ''`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-			return fmt.Errorf("迁移列失败: %w", err)
-		}
-	}
-	if _, err := s.DB.Exec(`ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'`); err != nil {
-		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-			return fmt.Errorf("迁移列失败: %w", err)
-		}
+	// 版本化迁移（历史库补列等增量变更，schema_migrations 记录进度）
+	if err := s.runMigrations(); err != nil {
+		return fmt.Errorf("迁移失败: %w", err)
 	}
 	return nil
 }

@@ -3,11 +3,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/agent"
@@ -67,8 +70,24 @@ func main() {
 	if cfg.Active().IsMock() {
 		slog.Warn("当前为 mock 模式")
 	}
-	if err := http.ListenAndServe(*addr, srv.Handler()); err != nil {
-		slog.Error("服务退出", "err", err)
+
+	// 优雅停机：监听 SIGINT/SIGTERM，先停新连接，再等活跃请求（含 SSE 流）完成
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.Handler()}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("服务异常退出", "err", err)
+			stop()
+		}
+	}()
+	<-ctx.Done()
+	slog.Info("收到退出信号，正在优雅停机（最长 10s）…")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("优雅停机超时，强制退出", "err", err)
 		os.Exit(1)
 	}
+	slog.Info("服务已安全退出")
 }
