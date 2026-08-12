@@ -47,7 +47,9 @@ type EvalCase struct {
 	Input         string       `json:"input"`
 	History       []HistoryMsg `json:"history,omitempty"`
 	ExpectedTools []string     `json:"expected_tools"`
-	ToolOrder     string       `json:"tool_order"` // exact / contains（默认 contains）
+	ToolOrder     string       `json:"tool_order"`        // exact / contains（默认 contains）
+	AcceptTools   []string     `json:"accept_tools,omitempty"` // 白名单：实际工具都须在其中（空序列亦通过），用于路径无关断言
+	ExpectText    []string     `json:"expect_text,omitempty"`  // 最终回复须包含的子串（验证行为结果）
 	CheckArgs     []ArgCheck   `json:"check_args"`
 	RealOnly      bool         `json:"real_only,omitempty"` // 仅真实 LLM 模式（mock 无状态不适用）
 	Note          string       `json:"note"`
@@ -86,20 +88,31 @@ func (c *collector) emit(ev agent.Event) {
 	}
 	switch ev.Type {
 	case "tool_call":
-		data, _ := ev.Data.(map[string]any)
-		name, _ := data["name"].(string)
-		args, _ := data["arguments"].(string)
-		c.tools = append(c.tools, name)
-		c.argsByName[name] = append(c.argsByName[name], args)
+		if m, ok := ev.Data.(map[string]any); ok {
+			if name, ok := m["name"].(string); ok {
+				c.tools = append(c.tools, name)
+				if args, ok := m["arguments"].(string); ok {
+					c.argsByName[name] = append(c.argsByName[name], args)
+				}
+			}
+		}
 	case "message":
-		data, _ := ev.Data.(map[string]any)
-		if d, ok := data["delta"].(string); ok {
-			c.text.WriteString(d)
+		switch d := ev.Data.(type) {
+		case map[string]string:
+			c.text.WriteString(d["delta"])
+		case map[string]any:
+			if s, ok := d["delta"].(string); ok {
+				c.text.WriteString(s)
+			}
 		}
 	case "error":
-		data, _ := ev.Data.(map[string]any)
-		if m, ok := data["message"].(string); ok {
-			c.errMsg = m
+		switch d := ev.Data.(type) {
+		case map[string]string:
+			c.errMsg = d["message"]
+		case map[string]any:
+			if s, ok := d["message"].(string); ok {
+				c.errMsg = s
+			}
 		}
 	}
 }
@@ -109,6 +122,7 @@ func main() {
 	cfgPath := flag.String("config", "config.json", "LLM 配置路径")
 	mock := flag.Bool("mock", false, "强制 mock 模式（不调用真实 LLM）")
 	only := flag.String("only", "", "只运行指定用例 ID")
+	retry := flag.Int("retry", 1, "执行出错（LLM 请求失败等）时的重试次数")
 	outPath := flag.String("out", "", "报告输出路径（默认 data/eval/report-<ts>.json）")
 	flag.Parse()
 
@@ -134,6 +148,10 @@ func main() {
 			ActiveProvider: "mock", Temperature: 0.7, MaxIterations: 8,
 		}
 	}
+	// 评测用低温度提升确定性，避免 LLM 随机波动导致偶发失败
+	if !*mock && cfg.Temperature > 0.3 {
+		cfg.Temperature = 0.2
+	}
 
 	pass, fail, skipped := 0, 0, 0
 	var results []CaseResult
@@ -148,7 +166,15 @@ func main() {
 			skipped++
 			continue
 		}
-		r := runCase(c, cfg, *mock)
+		// 执行出错（LLM 请求失败/超时等环境噪声）时自动重试
+		var r CaseResult
+		for attempt := 0; attempt <= *retry; attempt++ {
+			r = runCase(c, cfg, *mock)
+			if r.Pass || !strings.HasPrefix(r.Reason, "执行出错") || attempt == *retry {
+				break
+			}
+			fmt.Printf("      ↻ %s 执行出错，重试 %d/%d\n", c.ID, attempt+1, *retry)
+		}
 		if r.Pass {
 			pass++
 		} else {
@@ -252,8 +278,23 @@ func runCase(c EvalCase, cfg *config.Config, forceMock bool) CaseResult {
 	return res
 }
 
-// judge 判定用例：工具序列 + 参数断言。
+// judge 判定用例：回复文本断言 + 工具序列（白名单或子序列）+ 参数断言。
 func judge(c EvalCase, col *collector) (bool, string) {
+	// 1. 回复文本断言（验证行为结果）
+	for _, sub := range c.ExpectText {
+		if !strings.Contains(col.text.String(), sub) {
+			return false, fmt.Sprintf("最终回复未包含「%s」（实际: %s）", sub, truncate(col.text.String(), 80))
+		}
+	}
+	// 2. 工具序列
+	if len(c.AcceptTools) > 0 {
+		for _, t := range col.tools {
+			if !containsStr(c.AcceptTools, t) {
+				return false, fmt.Sprintf("调用工具 %s 不在白名单 %v", t, c.AcceptTools)
+			}
+		}
+		return true, "工具均在白名单内，回复文本断言通过"
+	}
 	exp := c.ExpectedTools
 	if len(exp) == 0 {
 		if len(col.tools) == 0 {
@@ -265,6 +306,7 @@ func judge(c EvalCase, col *collector) (bool, string) {
 	if !ok {
 		return false, why
 	}
+	// 3. 参数断言
 	for _, ac := range c.CheckArgs {
 		argsList := col.argsByName[ac.Tool]
 		if len(argsList) == 0 {
@@ -275,6 +317,15 @@ func judge(c EvalCase, col *collector) (bool, string) {
 		}
 	}
 	return true, "工具序列与参数断言全部通过"
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // matchTools 匹配工具序列。

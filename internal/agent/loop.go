@@ -48,6 +48,13 @@ func NewLoop(cfg *config.Config, svc *service.Service) *Loop {
 // history 为之前的对话（user/assistant 文本消息，不含工具中间过程），用于多轮上下文；
 // emit 用于推送流式事件；返回最终回复文本。
 func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message, userMsg string, emit func(Event)) (string, error) {
+	// 意图预过滤：无关主题/纯闲聊直接本地回复，不调用 LLM（节省 token）
+	if reply, ok := l.preFilterReply(userMsg); ok {
+		emit(Event{Type: "message", Data: map[string]string{"delta": reply}})
+		emit(Event{Type: "done", Data: map[string]any{}})
+		return reply, nil
+	}
+
 	system := l.buildSystemPrompt(patron)
 	messages := []Message{{Role: "system", Content: system}}
 	for _, h := range history {

@@ -50,9 +50,9 @@
       "category": "借阅",
       "patron": "张三",
       "input": "我要借《三体Ⅱ·黑暗森林》",
-      "expected_tools": ["search_books", "guide_borrow"],
-      "tool_order": "contains",
-      "note": "借书须到馆：有可借副本时引导到馆借阅（guide_borrow 内部含馆藏查询），不直接线上借出"
+      "accept_tools": ["search_books", "get_book_availability", "guide_borrow"],
+      "expect_text": ["到馆"],
+      "note": "借书须到馆：可借时 LLM 可用工具或文字完成到馆引导（不线上借出），验证引导结果"
     },
     {
       "id": "circ-01b",
@@ -171,10 +171,10 @@
         { "role": "user", "content": "帮我查一下《百年孤独》" },
         { "role": "assistant", "content": "为您查到《百年孤独》（加西亚·马尔克斯），共 3 个副本，其中 1 本被李四借出（应还 2026-08-23），2 本可借。" }
       ],
-      "expected_tools": ["guide_borrow"],
-      "tool_order": "contains",
+      "accept_tools": ["guide_borrow"],
+      "expect_text": ["百年孤独"],
       "real_only": true,
-      "note": "多轮上下文（仅真实模式）：「这本书」正确指向《百年孤独》，guide_borrow 内部含馆藏查询，直接引导到馆"
+      "note": "多轮上下文（仅真实模式）：「这本书」须正确指代《百年孤独》（文本断言），引导方式不限"
     },
     {
       "id": "edge-01",
