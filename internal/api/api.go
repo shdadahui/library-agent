@@ -70,6 +70,23 @@ func currentUser(r *http.Request) *store.User {
 	return nil
 }
 
+// IsAdmin 判断当前用户是否为管理员。
+func IsAdmin(r *http.Request) bool {
+	u := currentUser(r)
+	return u != nil && u.Role == "admin"
+}
+
+// requireAdmin 管理员鉴权中间件。
+func requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsAdmin(r) {
+			writeErr(w, http.StatusForbidden, "需要管理员权限")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // bearerToken 提取 Authorization: Bearer xxx。
 func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
@@ -104,6 +121,10 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/patrons", s.handlePatrons)
 	m.HandleFunc("GET /api/recommend", s.handleRecommend)
 	m.HandleFunc("GET /api/me/report", s.handleMyReport)
+	// 管理员端点（路由分组：包在 requireAdmin 里）
+	m.Handle("GET /api/admin/users", requireAdmin(http.HandlerFunc(s.handleAdminUsers)))
+	m.Handle("GET /api/admin/books", requireAdmin(http.HandlerFunc(s.handleAdminBooks)))
+	m.Handle("GET /api/admin/stats", requireAdmin(http.HandlerFunc(s.handleAdminStats)))
 	m.HandleFunc("GET /api/patrons/{id}/loans", s.handlePatronLoans)
 	m.HandleFunc("GET /api/patrons/{id}/history", s.handlePatronHistory)
 	m.HandleFunc("GET /api/patrons/{id}/fines", s.handlePatronFines)
