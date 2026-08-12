@@ -132,11 +132,15 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 	seedLoan(st, itemOf("三体"), zhang, day(-10), day(4), 0, "active")
 	seedLoan(st, itemOf("活着"), zhang, day(-20), day(-6), 0, "active")
 	seedLoan(st, itemOf("围城"), zhang, day(-30), day(-2), 1, "active")
-	// 张三预置一笔未缴罚款（2.4 元，逾期 24 天）
+	// 张三预置一笔未缴罚款（2.4 元，逾期 24 天）——同借阅不重复插入
 	if loan, err := st.ActiveLoanByItem(itemOf("活着")); err == nil {
-		_, _ = st.CreateFine(&store.Fine{
-			PatronID: zhang, LoanID: loan.ID, AmountCents: 240, CreatedDate: day(-6),
-		})
+		var fn int
+		_ = st.DB.QueryRow(`SELECT COUNT(*) FROM fines WHERE loan_id=?`, loan.ID).Scan(&fn)
+		if fn == 0 {
+			_, _ = st.CreateFine(&store.Fine{
+				PatronID: zhang, LoanID: loan.ID, AmountCents: 240, CreatedDate: day(-6),
+			})
+		}
 	}
 	// 李四：百年孤独（正常在借）
 	lisi := idByPatron["李四"]
@@ -327,10 +331,18 @@ func seedGate(st *store.Store, idByPatron map[string]int64) {
 }
 
 // seedLoan 直接写入借阅记录并置副本为 borrowed（用于预置场景，绕过业务规则）。
+// 幂等：active 场景若同 (副本, 读者) 已有在借记录则跳过，支持 seed 安全重跑。
 // returned 记录默认按时归还（checkin_date = due_date），避免误判逾期。
 func seedLoan(st *store.Store, itemID, patronID int64, checkout, due string, renewals int, status string) {
 	if itemID == 0 {
 		return
+	}
+	if status == "active" {
+		var n int
+		_ = st.DB.QueryRow(`SELECT COUNT(*) FROM loans WHERE item_id=? AND patron_id=? AND status='active'`, itemID, patronID).Scan(&n)
+		if n > 0 {
+			return // 幂等：已有在借记录
+		}
 	}
 	if status == "returned" {
 		_, _ = st.DB.Exec(`INSERT INTO loans(item_id,patron_id,checkout_date,due_date,checkin_date,renewals,status) VALUES(?,?,?,?,?,?,'returned')`,

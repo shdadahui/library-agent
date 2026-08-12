@@ -400,6 +400,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <div id="reportModal"><div class="box">
   <button class="close" id="reportClose">✕</button>
   <h2 id="rpTitle">我的阅读报告</h2>
@@ -699,8 +700,10 @@ function addMsg(role, text) {
 }
 function renderMd(el, text) {
   el.classList.add("md");
-  if (window.marked) el.innerHTML = marked.parse(text || "");
-  else el.innerHTML = "<pre style='white-space:pre-wrap'>" + escapeHtml(text) + "</pre>";
+  if (window.marked) {
+    // 安全渲染：LLM 输出先经 DOMPurify 清洗，防 prompt 注入携带的 HTML/脚本
+    el.innerHTML = window.DOMPurify ? DOMPurify.sanitize(marked.parse(text || "")) : escapeHtml(text);
+  } else el.innerHTML = "<pre style='white-space:pre-wrap'>" + escapeHtml(text) + "</pre>";
 }
 function escapeHtml(s) {
   return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

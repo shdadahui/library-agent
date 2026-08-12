@@ -306,49 +306,20 @@ type ReturnResult struct {
 	HoldWakeUp string `json:"hold_wake_up,omitempty"`
 }
 
-// Return 还书：计算逾期罚款（0.1 元/天），唤醒预约队列。
+// Return 还书：单一事务内完成"关借阅 + 副本可借 + 逾期罚款 + 唤醒预约"，
+// 任何一步失败整体回滚，杜绝半完成状态。
 func (s *Service) Return(loanID int64) (*ReturnResult, error) {
-	loan, err := s.st.GetLoan(loanID)
-	if err != nil {
-		return nil, ErrLoanNotFound
-	}
-	if loan.Status != "active" {
-		return nil, ErrLoanNotActive
-	}
-	it, err := s.st.GetItem(loan.ItemID)
-	if err != nil {
-		return nil, err
-	}
 	today := store.Now()
-	res := &ReturnResult{LoanID: loanID}
-	// 逾期罚款
-	if loan.DueDate < today {
-		days := daysBetween(loan.DueDate, today)
-		res.FineCents = days * FinePerDayCents
-		if res.FineCents > 0 {
-			f := &store.Fine{
-				PatronID:    loan.PatronID,
-				LoanID:      loanID,
-				AmountCents: res.FineCents,
-				CreatedDate: today,
-			}
-			if _, err := s.st.CreateFine(f); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if err := s.st.Checkin(loanID, today); err != nil {
-		return nil, err
-	}
-	// 唤醒预约队列
-	hold, err := s.st.FulfillHoldTx(it.BiblioID, it.ID)
+	fine, wakeName, err := s.st.ReturnTx(loanID, today, FinePerDayCents)
 	if err != nil {
+		if errors.Is(err, store.ErrLoanNotActive) {
+			return nil, ErrLoanNotActive
+		}
 		return nil, err
 	}
-	if hold != nil {
-		if p, err := s.st.GetPatron(hold.PatronID); err == nil {
-			res.HoldWakeUp = fmt.Sprintf("已通知预约者 %s 到馆取书", p.Name)
-		}
+	res := &ReturnResult{LoanID: loanID, FineCents: fine}
+	if wakeName != "" {
+		res.HoldWakeUp = fmt.Sprintf("已通知预约者 %s 到馆取书", wakeName)
 	}
 	return res, nil
 }

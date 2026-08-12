@@ -108,7 +108,7 @@ func (s *Service) AvailableSeats(date, slot string) ([]SeatView, error) {
 	return out, nil
 }
 
-// ReserveSeat 预约座位。
+// ReserveSeat 预约座位（原子：冲突校验在 INSERT..WHERE NOT EXISTS 中完成，并发安全）。
 func (s *Service) ReserveSeat(patronID, seatID int64, date, slot string) (*store.SeatReservation, error) {
 	if !validSlot(slot) {
 		return nil, ErrSeatSlotInvalid
@@ -119,30 +119,18 @@ func (s *Service) ReserveSeat(patronID, seatID int64, date, slot string) (*store
 	if _, err := s.st.GetSeat(seatID); err != nil {
 		return nil, err
 	}
-	// 同读者同日已有预约
-	existing, err := s.st.PatronSeatReservations(patronID, true)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range existing {
-		if r.ReserveDate == date {
-			return nil, ErrSeatQuotaReached
-		}
-	}
-	// 同座位同时段冲突
-	conflict, err := s.st.SeatReservationConflict(seatID, date, slot)
-	if err != nil {
-		return nil, err
-	}
-	if conflict {
-		return nil, ErrSeatAlreadyReserved
-	}
 	r := &store.SeatReservation{
 		SeatID: seatID, PatronID: patronID, ReserveDate: date, Slot: slot,
 		Status: "active", CreatedAt: store.NowDateTime(),
 	}
 	id, err := s.st.CreateSeatReservation(r)
 	if err != nil {
+		if errors.Is(err, store.ErrSeatReservedConflict) {
+			return nil, ErrSeatAlreadyReserved
+		}
+		if errors.Is(err, store.ErrSeatQuotaConflict) {
+			return nil, ErrSeatQuotaReached
+		}
 		return nil, err
 	}
 	return s.st.GetSeatReservation(id)

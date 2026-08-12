@@ -113,12 +113,43 @@ func (s *Store) AvailableSeats(date, slot string) ([]Seat, error) {
 	return out, rows.Err()
 }
 
-// CreateSeatReservation 创建预约。
+// 座位冲突错误（原子插入时返回）。
+var (
+	ErrSeatReservedConflict = errors.New("该座位在该时段已被预约")
+	ErrSeatQuotaConflict    = errors.New("同一读者一天最多预约 1 个座位")
+)
+
+// CreateSeatReservation 原子预约：单条 INSERT..WHERE NOT EXISTS 同时校验
+// "同座位同时段冲突"与"同读者同日已有预约"，杜绝并发双预约
+// （SQLite 单连接串行写 / MySQL 语句级原子，跨驱动安全）。
 func (s *Store) CreateSeatReservation(r *SeatReservation) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO seat_reservations(seat_id,patron_id,reserve_date,slot,status,created_at) VALUES(?,?,?,?,?,?)`,
-		r.SeatID, r.PatronID, r.ReserveDate, r.Slot, r.Status, r.CreatedAt)
+	res, err := s.DB.Exec(`INSERT INTO seat_reservations(seat_id,patron_id,reserve_date,slot,status,created_at)
+		SELECT ?,?,?,?,?,?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM seat_reservations
+			WHERE seat_id=? AND reserve_date=? AND slot=? AND status IN ('active','checked_in')
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM seat_reservations
+			WHERE patron_id=? AND reserve_date=? AND status IN ('active','checked_in')
+		)`,
+		r.SeatID, r.PatronID, r.ReserveDate, r.Slot, r.Status, r.CreatedAt,
+		r.SeatID, r.ReserveDate, r.Slot,
+		r.PatronID, r.ReserveDate)
 	if err != nil {
 		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		// 区分冲突类型（仅用于报错文案；判断本身已是原子的）
+		conflict, _ := s.SeatReservationConflict(r.SeatID, r.ReserveDate, r.Slot)
+		if conflict {
+			return 0, ErrSeatReservedConflict
+		}
+		return 0, ErrSeatQuotaConflict
 	}
 	return res.LastInsertId()
 }
