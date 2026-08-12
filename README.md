@@ -43,6 +43,7 @@ docker compose up -d --build   # 需 DEEPSEEK_API_KEY 环境变量
 | 有什么好书推荐 | recommend_books → 兴趣画像 + 协同过滤 + 关联规则 |
 | 我喜欢科幻，推荐几本 | recommend_books → 按兴趣主题匹配 |
 | 我的阅读报告 | 统计借阅/最爱作者/月度趋势（侧边栏 📊） |
+| 图书馆借阅规则 | **RAG 知识库** rag_search（内置规则/政策文档） |
 | 今天天气怎么样 | **PreFilter 本地拦截**，不消耗 LLM token |
 | 续借我借的那本书（接上一轮） | 历史会话：结合上下文理解"那本书" |
 
@@ -177,6 +178,17 @@ data/logs/    对话日志               internal/auth     bcrypt + 会话（Red
 docker-compose.yml   MySQL 8 + Redis 7
 ```
 
+
+
+## 基于架构图的扩展
+
+参考图（图1）已实现的对应模块：
+- **RAG 知识库**（图中"模型管理系统"）：内置图书馆规则文档，Agent 通过 `rag_search` 工具检索后回答政策问题
+- **ASR 语音识别**（前端 Web Speech API）：长按 🎤 说话转文字
+- **nginx 反向代理**（compose）：`docker compose up -d --build` 一键起 App + MySQL + Redis + nginx
+- **应用管理系统**（管理员后台）：`admin/admin123` 登录后侧边栏显示 📋 面板，含运营统计与读者列表
+
+**演示账号**：`alice / alice123`（张三, user）、`bob / bob123`（李四, user）、`admin / admin123`（王五, admin）。
 ## 数据来源
 
 - 内置书单：37 本演示书目（中文经典/数学/英文经典，含《三体》《活着》《百年孤独》）
