@@ -8,8 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shdadahui/library-agent/internal/rag"
 	"github.com/shdadahui/library-agent/internal/service"
 )
+
+// RagIndex 全局 RAG 知识库索引（main 注入）。
+// 工具说明：rag_search {query, top_k} 检索图书馆规则/政策相关文档。
+var RagIndex *rag.Index
 
 // ToolDef 工具定义：Schema + Handler 注册表，与业务层解耦。
 type ToolDef struct {
@@ -137,6 +142,33 @@ func AllTools() []*ToolDef {
 			},
 			Handler: func(_ context.Context, s *service.Service, _ map[string]any) (any, error) {
 				return s.LibraryStats()
+			},
+		},
+		{
+			Name:        "rag_search",
+			Description: "检索图书馆规章制度知识库。用户问\"图书馆能借几本\"\"续借几次\"\"怎么预约\"\"罚款怎么算\"等政策/规则/流程问题时，先调用本工具获取相关文档片段，再结合给出回答。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string", "description": "问题关键词（自然语言）"},
+					"top_k": map[string]any{"type": "integer", "description": "返回文档数（默认 3）"},
+				},
+				"required": []string{"query"},
+			},
+			Handler: func(_ context.Context, _ *service.Service, args map[string]any) (any, error) {
+				if RagIndex == nil || RagIndex.Size() == 0 {
+					return nil, errors.New("知识库未初始化")
+				}
+				q, _ := args["query"].(string)
+				k := 3
+				if v, err := intArg(args, "top_k"); err == nil && v > 0 {
+					k = int(v)
+				}
+				docs := RagIndex.Search(q, k)
+				if len(docs) == 0 {
+					return map[string]any{"message": "知识库中未找到相关内容"}, nil
+				}
+				return docs, nil
 			},
 		},
 		{

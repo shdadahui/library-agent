@@ -14,6 +14,7 @@ import (
 	"github.com/shdadahui/library-agent/internal/api"
 	"github.com/shdadahui/library-agent/internal/auth"
 	"github.com/shdadahui/library-agent/internal/config"
+	"github.com/shdadahui/library-agent/internal/rag"
 	"github.com/shdadahui/library-agent/internal/service"
 	"github.com/shdadahui/library-agent/internal/store"
 )
@@ -56,6 +57,8 @@ func main() {
 	am := auth.NewManager(st, sess, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 
 	svc := service.New(st)
+	// 初始化 RAG 知识库（Agent 工具 rag_search 用）
+	agent.RagIndex = rag.New(rag.DefaultDocs)
 	loop := agent.NewLoop(cfg, svc)
 	srv := api.NewServer(cfg, svc, loop, am)
 

@@ -195,7 +195,8 @@ func (l *Loop) buildSystemPrompt(patron *store.Patron) string {
 	sb.WriteString("6. 还书/续借时若用户未指定具体书目，先查询在借清单，再询问用户要处理哪一本；不要擅自选择。\n")
 	sb.WriteString("7. 用户问图书馆的藏书量、借出量、读者数等统计问题时，调用 get_library_stats 回答。\n")
 	sb.WriteString("8. 用户请求推荐图书（\"推荐几本书\"\"有什么好书\"\"我喜欢科幻/数学\"\"根据我借的书推荐\"）时，调用 recommend_books；可向用户询问兴趣主题以获得更好推荐。\n")
-	sb.WriteString("9. 回答使用简体中文，语气友好简洁，金额用「元」；涉及列表、对比时可用 Markdown 表格。\n")
+	sb.WriteString("9. 用户问图书馆政策/规则/流程问题（\"能借几本\"\"续借几次\"\"罚款怎么算\"\"如何预约\"\"怎么借书\"）时，先调用 rag_search 获取相关文档片段，再结合用清晰的中文回答。\n")
+	sb.WriteString("10. 回答使用简体中文，语气友好简洁，金额用「元」；涉及列表、对比时可用 Markdown 表格。\n")
 	if patron != nil {
 		fmt.Fprintf(&sb, "当前登录读者：%s（读者ID %d）。涉及\"我\"的借阅、罚款、预约操作都指这位读者，工具参数 patron_id 用 %d。\n",
 			patron.Name, patron.ID, patron.ID)
