@@ -11,6 +11,41 @@ type LibraryStats struct {
 	UnpaidFinesCents int `json:"unpaid_fines_cents"` // 全馆未缴罚款总额（分）
 }
 
+// TopBorrowed 借阅次数最多的书目（热门榜）。
+func (s *Store) TopBorrowed(limit int) ([]struct {
+	Biblio
+	BorrowCount int `json:"borrow_count"`
+}, error) {
+	rows, err := s.DB.Query(`
+		SELECT b.id, b.title, b.author, b.isbn, b.publisher, b.publish_year, b.subjects, b.lang, b.cover_id, COUNT(l.id) AS cnt
+		FROM loans l
+		JOIN items i ON l.item_id = i.id
+		JOIN biblios b ON i.biblio_id = b.id
+		GROUP BY b.id
+		ORDER BY cnt DESC, b.id
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []struct {
+		Biblio
+		BorrowCount int `json:"borrow_count"`
+	}{}
+	for rows.Next() {
+		var b Biblio
+		var cnt int
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &cnt); err != nil {
+			return nil, err
+		}
+		out = append(out, struct {
+			Biblio
+			BorrowCount int `json:"borrow_count"`
+		}{Biblio: b, BorrowCount: cnt})
+	}
+	return out, rows.Err()
+}
+
 // LibraryStats 聚合统计。
 func (s *Store) LibraryStats() (*LibraryStats, error) {
 	st := &LibraryStats{}

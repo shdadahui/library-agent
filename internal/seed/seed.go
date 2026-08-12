@@ -8,12 +8,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// addDayOffset 日期加 n 天（YYYY-MM-DD）。
+func addDayOffset(date string, n int) string {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return date
+	}
+	return t.AddDate(0, 0, n).Format("2006-01-02")
+}
 
 // SeedBook 种子书目。
 type SeedBook struct {
@@ -133,7 +143,33 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 	// 孙八：蛙（该书面仅 1 副本，借出后可供预约场景演示）
 	seedLoan(st, itemOf("蛙"), idByPatron["孙八"], day(-8), day(6), 0, "active")
 
-	// 4. 演示登录账号（bcrypt 哈希，绑定演示读者）
+	// 4. 模拟历史借阅（供推荐系统与借阅历史展示；returned 不占副本状态）
+	rng := rand.New(rand.NewSource(20260812))
+	allItems := []store.Item{}
+	for _, bid := range idByTitle {
+		if items, err := st.ListItems(bid); err == nil {
+			allItems = append(allItems, items...)
+		}
+	}
+	patronIDs := []int64{idByPatron["张三"], idByPatron["李四"], idByPatron["王五"], idByPatron["赵六"], idByPatron["钱七"], idByPatron["孙八"]}
+	if len(allItems) > 0 {
+		for _, pid := range patronIDs {
+			seen := map[int64]bool{}
+			n := 10 + rng.Intn(8) // 10~17 条历史
+			for i := 0; i < n; i++ {
+				it := allItems[rng.Intn(len(allItems))]
+				if seen[it.ID] {
+					continue
+				}
+				seen[it.ID] = true
+				checkout := day(-60 - rng.Intn(340))
+				due := addDayOffset(checkout, 14)
+				seedLoan(st, it.ID, pid, checkout, due, rng.Intn(3), "returned")
+			}
+		}
+	}
+
+	// 5. 演示登录账号（bcrypt 哈希，绑定演示读者）
 	demoAccounts := []struct {
 		username, password, patronName string
 	}{

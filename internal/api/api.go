@@ -100,6 +100,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/books", s.handleSearchBooks)
 	m.HandleFunc("GET /api/books/{id}", s.handleBookDetail)
 	m.HandleFunc("GET /api/patrons", s.handlePatrons)
+	m.HandleFunc("GET /api/recommend", s.handleRecommend)
 	m.HandleFunc("GET /api/patrons/{id}/loans", s.handlePatronLoans)
 	m.HandleFunc("GET /api/patrons/{id}/history", s.handlePatronHistory)
 	m.HandleFunc("GET /api/patrons/{id}/fines", s.handlePatronFines)

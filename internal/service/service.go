@@ -55,6 +55,56 @@ func (s *Service) CountBooks() (int, error) { return s.st.CountBiblios() }
 // LibraryStats 全馆统计。
 func (s *Service) LibraryStats() (*store.LibraryStats, error) { return s.st.LibraryStats() }
 
+// ---- 历史会话（conversations / messages） ----
+
+// CreateConversation 新建会话。
+func (s *Service) CreateConversation(userID int64) (*store.Conversation, error) {
+	now := store.NowDateTime()
+	c := &store.Conversation{UserID: userID, Title: "新会话", CreatedAt: now, UpdatedAt: now}
+	id, err := s.st.CreateConversation(c)
+	if err != nil {
+		return nil, err
+	}
+	return s.st.GetConversation(id)
+}
+
+// ListConversations 会话列表。
+func (s *Service) ListConversations(userID int64) ([]store.Conversation, error) {
+	return s.st.ListConversations(userID)
+}
+
+// GetConversation 单个会话。
+func (s *Service) GetConversation(id int64) (*store.Conversation, error) {
+	return s.st.GetConversation(id)
+}
+
+// DeleteConversation 删除会话。
+func (s *Service) DeleteConversation(id int64) error { return s.st.DeleteConversation(id) }
+
+// ListMessages 会话消息。
+func (s *Service) ListMessages(conversationID int64) ([]store.Message, error) {
+	return s.st.ListMessages(conversationID)
+}
+
+// AddMessage 追加消息并刷新会话时间。
+func (s *Service) AddMessage(conversationID int64, role, content string) error {
+	if _, err := s.st.AddMessage(&store.Message{
+		ConversationID: conversationID, Role: role, Content: content, CreatedAt: store.NowDateTime(),
+	}); err != nil {
+		return err
+	}
+	return s.st.TouchConversation(conversationID)
+}
+
+// RenameConversation 以首条用户消息生成会话标题。
+func (s *Service) RenameConversation(id int64, firstUserMsg string) error {
+	title := firstUserMsg
+	if runes := []rune(title); len(runes) > 18 {
+		title = string(runes[:18]) + "…"
+	}
+	return s.st.UpdateConversationTitle(id, title)
+}
+
 // SearchBooks 检索书目并附带可借副本数。
 type BookSearchResult struct {
 	store.Biblio

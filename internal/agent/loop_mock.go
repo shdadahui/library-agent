@@ -28,6 +28,8 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 		switch {
 		case strings.Contains(msg, "统计") || strings.Contains(msg, "多少藏书") || strings.Contains(msg, "藏书量") || strings.Contains(msg, "多少本") || strings.Contains(msg, "多少读者") || strings.Contains(msg, "借出多少"):
 			out = l.mockStats(patron, emit)
+		case strings.Contains(msg, "推荐") || strings.Contains(msg, "有什么好书") || strings.Contains(msg, "好看的书") || strings.Contains(msg, "喜欢") || strings.Contains(msg, "书单"):
+			out = l.mockRecommend(patron, emit)
 		case strings.Contains(msg, "续借"):
 			out = l.mockRenew(ctx, patron, emit)
 		case strings.Contains(msg, "还书") || strings.Contains(msg, "归还") || strings.Contains(msg, "还了") || strings.Contains(msg, "还掉"):
@@ -192,6 +194,37 @@ func (l *Loop) mockStats(patron *store.Patron, emit func(Event)) string {
 	emitResult(emit, "get_library_stats", st)
 	return fmt.Sprintf("本馆现有藏书 %d 种、馆藏副本 %d 本（可借 %d 本、在借 %d 本），等待预约 %d 个，注册读者 %d 位，全馆未缴罚款合计 %.1f 元。",
 		st.Books, st.Copies, st.Available, st.Borrowed, st.HoldsWaiting, st.Patrons, float64(st.UnpaidFinesCents)/100)
+}
+
+// mockRecommend 智能推荐（基于借阅历史，无历史时热门兜底）。
+func (l *Loop) mockRecommend(patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "recommend_books", map[string]any{"patron_id": patron.ID})
+	recs, err := l.Svc.RecommendForPatron(patron.ID, "", 5)
+	if err != nil {
+		return "查询出错：" + err.Error()
+	}
+	emitResult(emit, "recommend_books", recs)
+	if len(recs) == 0 {
+		return "暂无可推荐的图书，建议先多借阅几本，我会根据您的阅读偏好推荐。"
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s，为您推荐以下图书：\n", patron.Name))
+	for i, r := range recs {
+		avail := "有可借副本"
+		if r.Available == 0 {
+			avail = "暂无可借副本"
+		}
+		why := ""
+		if len(r.Reasons) > 0 {
+			n := 2
+			if len(r.Reasons) < n {
+				n = len(r.Reasons)
+			}
+			why = "（" + strings.Join(r.Reasons[:n], "、") + "）"
+		}
+		sb.WriteString(fmt.Sprintf("%d. 《%s》 %s（%d 年）%s%s\n", i+1, r.Title, r.Author, r.PublishYear, avail, why))
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 // mockAvailability 查询馆藏：先检索书目，再查各副本状态。

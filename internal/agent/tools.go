@@ -140,6 +140,33 @@ func AllTools() []*ToolDef {
 			},
 		},
 		{
+			Name:        "recommend_books",
+			Description: "智能推荐图书。用户说\"推荐几本书\"\"有什么好书\"\"我喜欢科幻\"\"根据我借过的书推荐\"等时使用。无 taste 时基于读者借阅历史个性化推荐；提供 taste（如\"科幻\"\"数学\"\"历史\"）按兴趣主题推荐；无历史时返回热门图书。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"taste": map[string]any{"type": "string", "description": "兴趣主题关键词，可选（如：科幻、数学、历史、小说）"},
+					"count": map[string]any{"type": "integer", "description": "推荐数量，可选，默认 5"},
+				},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				pid, _ := intArg(args, "patron_id")
+				taste, _ := args["taste"].(string)
+				count := 5
+				if v, err := intArg(args, "count"); err == nil && v > 0 {
+					count = int(v)
+				}
+				recs, err := s.RecommendForPatron(pid, taste, count)
+				if err != nil {
+					return nil, err
+				}
+				if len(recs) == 0 {
+					return map[string]any{"message": "暂无可推荐的图书"}, nil
+				}
+				return recs, nil
+			},
+		},
+		{
 			Name:        "return_book",
 			Description: "归还图书。用户说\"我还书\"\"这本书还了\"时使用，先 get_my_loans 找到 loan_id。归还时自动计算逾期罚款并通知预约者。",
 			Parameters: map[string]any{

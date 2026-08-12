@@ -163,6 +163,33 @@
       "note": "在借统计"
     },
     {
+      "id": "rec-01",
+      "category": "推荐",
+      "patron": "张三",
+      "input": "有什么好书推荐吗",
+      "expected_tools": ["recommend_books"],
+      "tool_order": "contains",
+      "note": "基于借阅历史的个性化推荐"
+    },
+    {
+      "id": "rec-02",
+      "category": "推荐",
+      "patron": "张三",
+      "input": "我喜欢科幻，推荐几本",
+      "expected_tools": ["recommend_books"],
+      "tool_order": "contains",
+      "note": "按兴趣主题（taste=科幻）推荐"
+    },
+    {
+      "id": "rec-03",
+      "category": "推荐",
+      "patron": "李四",
+      "input": "根据我借过的书推荐一些",
+      "expected_tools": ["recommend_books"],
+      "tool_order": "contains",
+      "note": "明确基于借阅历史的推荐"
+    },
+    {
       "id": "multi-01",
       "category": "多轮",
       "patron": "张三",
