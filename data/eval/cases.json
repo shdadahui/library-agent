@@ -1,5 +1,5 @@
 {
-    "meta": {
+  "meta": {
     "name": "library-agent-eval",
     "version": "0.3",
     "note": "图书馆 Agent 功能评测集。基于内置种子数据（37 本书、6 读者、预置借阅场景）。判定依据：期望工具调用序列（exact=严格相等 / contains=子序列）+ 关键参数检查。",
@@ -11,9 +11,17 @@
       "category": "检索",
       "patron": "张三",
       "input": "帮我查一下《三体》",
-      "expected_tools": ["search_books"],
+      "expected_tools": [
+        "search_books"
+      ],
       "tool_order": "contains",
-      "check_args": [{ "tool": "search_books", "param": "q", "contains": "三体" }],
+      "check_args": [
+        {
+          "tool": "search_books",
+          "param": "q",
+          "contains": "三体"
+        }
+      ],
       "note": "单工具检索，书名提取（LLM 可能顺带查馆藏，属合理增强）"
     },
     {
@@ -21,9 +29,17 @@
       "category": "检索",
       "patron": "张三",
       "input": "图书馆有乔治·奥威尔的书吗",
-      "expected_tools": ["search_books"],
+      "expected_tools": [
+        "search_books"
+      ],
       "tool_order": "contains",
-      "check_args": [{ "tool": "search_books", "param": "q", "contains": "奥威尔" }],
+      "check_args": [
+        {
+          "tool": "search_books",
+          "param": "q",
+          "contains": "奥威尔"
+        }
+      ],
       "note": "按作者检索"
     },
     {
@@ -31,7 +47,10 @@
       "category": "检索",
       "patron": "张三",
       "input": "《三体》的馆藏情况怎么样",
-      "expected_tools": ["search_books", "get_book_availability"],
+      "expected_tools": [
+        "search_books",
+        "get_book_availability"
+      ],
       "tool_order": "contains",
       "note": "检索后查馆藏，多工具编排"
     },
@@ -40,9 +59,17 @@
       "category": "检索",
       "patron": "张三",
       "input": "有哪些数学方面的书",
-      "expected_tools": ["search_books"],
+      "expected_tools": [
+        "search_books"
+      ],
       "tool_order": "contains",
-      "check_args": [{ "tool": "search_books", "param": "q", "contains": "数学" }],
+      "check_args": [
+        {
+          "tool": "search_books",
+          "param": "q",
+          "contains": "数学"
+        }
+      ],
       "note": "按主题检索"
     },
     {
@@ -50,8 +77,14 @@
       "category": "借阅",
       "patron": "张三",
       "input": "我要借《三体Ⅱ·黑暗森林》",
-      "accept_tools": ["search_books", "get_book_availability", "guide_borrow"],
-      "expect_text": ["到馆"],
+      "accept_tools": [
+        "search_books",
+        "get_book_availability",
+        "guide_borrow"
+      ],
+      "expect_text": [
+        "到馆"
+      ],
       "note": "借书须到馆：可借时 LLM 可用工具或文字完成到馆引导（不线上借出），验证引导结果"
     },
     {
@@ -59,7 +92,11 @@
       "category": "借阅",
       "patron": "王五",
       "input": "帮我借《三体》",
-      "expected_tools": ["search_books", "get_book_availability", "place_hold"],
+      "expected_tools": [
+        "search_books",
+        "get_book_availability",
+        "place_hold"
+      ],
       "tool_order": "contains",
       "note": "三体全部借出：借书意图下自动转为预约排队"
     },
@@ -68,7 +105,9 @@
       "category": "借阅",
       "patron": "张三",
       "input": "帮我还书",
-      "expected_tools": ["get_my_loans"],
+      "expected_tools": [
+        "get_my_loans"
+      ],
       "tool_order": "contains",
       "note": "未指定哪本书：查询在借清单后询问具体书目（澄清优先于擅自归还）"
     },
@@ -77,7 +116,10 @@
       "category": "借阅",
       "patron": "张三",
       "input": "把《活着》还了",
-      "expected_tools": ["get_my_loans", "return_book"],
+      "expected_tools": [
+        "get_my_loans",
+        "return_book"
+      ],
       "tool_order": "contains",
       "note": "指定书名归还（活着逾期，归还应产生罚款）"
     },
@@ -86,7 +128,10 @@
       "category": "续借",
       "patron": "张三",
       "input": "帮我续借《三体》",
-      "expected_tools": ["get_my_loans", "renew_loan"],
+      "expected_tools": [
+        "get_my_loans",
+        "renew_loan"
+      ],
       "tool_order": "contains",
       "note": "成功续借：三体应还日在将来且可续借"
     },
@@ -95,7 +140,10 @@
       "category": "续借",
       "patron": "李四",
       "input": "帮我把《百年孤独》续借一下",
-      "expected_tools": ["get_my_loans", "renew_loan"],
+      "expected_tools": [
+        "get_my_loans",
+        "renew_loan"
+      ],
       "tool_order": "contains",
       "note": "成功续借：李四百年孤独正常在借"
     },
@@ -104,7 +152,9 @@
       "category": "续借",
       "patron": "张三",
       "input": "我有哪些书可以续借",
-      "expected_tools": ["get_my_loans"],
+      "expected_tools": [
+        "get_my_loans"
+      ],
       "tool_order": "contains",
       "note": "仅查询续借资格"
     },
@@ -113,7 +163,9 @@
       "category": "罚款",
       "patron": "张三",
       "input": "我有逾期罚款吗",
-      "expected_tools": ["get_my_fines"],
+      "expected_tools": [
+        "get_my_fines"
+      ],
       "tool_order": "contains",
       "note": "张三预置 2.4 元未缴罚款"
     },
@@ -122,7 +174,9 @@
       "category": "罚款",
       "patron": "王五",
       "input": "我欠图书馆钱吗",
-      "expected_tools": ["get_my_fines"],
+      "expected_tools": [
+        "get_my_fines"
+      ],
       "tool_order": "contains",
       "note": "王五无未缴罚款，应正确返回 0"
     },
@@ -131,7 +185,10 @@
       "category": "预约",
       "patron": "王五",
       "input": "帮我预约《三体》",
-      "expected_tools": ["search_books", "place_hold"],
+      "expected_tools": [
+        "search_books",
+        "place_hold"
+      ],
       "tool_order": "contains",
       "note": "三体全部副本借出（张三+钱七）且王五未预约过，应成功排队"
     },
@@ -140,7 +197,10 @@
       "category": "预约",
       "patron": "张三",
       "input": "我想预约《蛙》",
-      "expected_tools": ["search_books", "place_hold"],
+      "expected_tools": [
+        "search_books",
+        "place_hold"
+      ],
       "tool_order": "contains",
       "note": "蛙仅 1 副本且被孙八借出，张三可预约成功"
     },
@@ -149,7 +209,9 @@
       "category": "统计",
       "patron": "张三",
       "input": "图书馆一共有多少本藏书？",
-      "expected_tools": ["get_library_stats"],
+      "expected_tools": [
+        "get_library_stats"
+      ],
       "tool_order": "contains",
       "note": "全馆统计（藏书量/副本/在借/预约/读者/罚款）"
     },
@@ -158,7 +220,9 @@
       "category": "统计",
       "patron": "张三",
       "input": "全馆现在借出了多少本书？",
-      "expected_tools": ["get_library_stats"],
+      "expected_tools": [
+        "get_library_stats"
+      ],
       "tool_order": "contains",
       "note": "在借统计"
     },
@@ -167,7 +231,9 @@
       "category": "推荐",
       "patron": "张三",
       "input": "有什么好书推荐吗",
-      "expected_tools": ["recommend_books"],
+      "expected_tools": [
+        "recommend_books"
+      ],
       "tool_order": "contains",
       "note": "基于借阅历史的个性化推荐"
     },
@@ -176,7 +242,9 @@
       "category": "推荐",
       "patron": "张三",
       "input": "我喜欢科幻，推荐几本",
-      "expected_tools": ["recommend_books"],
+      "expected_tools": [
+        "recommend_books"
+      ],
       "tool_order": "contains",
       "note": "按兴趣主题（taste=科幻）推荐"
     },
@@ -185,7 +253,9 @@
       "category": "推荐",
       "patron": "李四",
       "input": "根据我借过的书推荐一些",
-      "expected_tools": ["recommend_books"],
+      "expected_tools": [
+        "recommend_books"
+      ],
       "tool_order": "contains",
       "note": "明确基于借阅历史的推荐"
     },
@@ -195,11 +265,21 @@
       "patron": "张三",
       "input": "我想借这本书",
       "history": [
-        { "role": "user", "content": "帮我查一下《百年孤独》" },
-        { "role": "assistant", "content": "为您查到《百年孤独》（加西亚·马尔克斯），共 3 个副本，其中 1 本被李四借出（应还 2026-08-23），2 本可借。" }
+        {
+          "role": "user",
+          "content": "帮我查一下《百年孤独》"
+        },
+        {
+          "role": "assistant",
+          "content": "为您查到《百年孤独》（加西亚·马尔克斯），共 3 个副本，其中 1 本被李四借出（应还 2026-08-23），2 本可借。"
+        }
       ],
-      "accept_tools": ["guide_borrow"],
-      "expect_text": ["百年孤独"],
+      "accept_tools": [
+        "guide_borrow"
+      ],
+      "expect_text": [
+        "百年孤独"
+      ],
       "real_only": true,
       "note": "多轮上下文（仅真实模式）：「这本书」须正确指代《百年孤独》（文本断言），引导方式不限"
     },
@@ -226,7 +306,9 @@
       "category": "边界",
       "patron": "张三",
       "input": "帮我续借",
-      "expected_tools": ["get_my_loans"],
+      "expected_tools": [
+        "get_my_loans"
+      ],
       "tool_order": "contains",
       "note": "信息不足：应先查询清单（可继续询问或直接续借可续的书）"
     },
@@ -235,7 +317,9 @@
       "category": "边界",
       "patron": "张三",
       "input": "帮我借一本《不存在之书》",
-      "expected_tools": ["search_books"],
+      "expected_tools": [
+        "search_books"
+      ],
       "tool_order": "contains",
       "note": "查无此书应如实告知，不产生借阅"
     },
@@ -244,7 +328,9 @@
       "category": "座位",
       "patron": "李四",
       "input": "图书馆有哪些空座位？",
-      "expected_tools": ["search_seats"],
+      "expected_tools": [
+        "search_seats"
+      ],
       "tool_order": "contains",
       "note": "查可用座位"
     },
@@ -253,7 +339,10 @@
       "category": "座位",
       "patron": "李四",
       "input": "帮我预约一个自习座位",
-      "expected_tools": ["search_seats", "reserve_seat"],
+      "expected_tools": [
+        "search_seats",
+        "reserve_seat"
+      ],
       "tool_order": "contains",
       "note": "预约座位：先查可用再预约（李四当天无预约，可成功）"
     },
@@ -262,7 +351,10 @@
       "category": "座位",
       "patron": "张三",
       "input": "我要取消座位预约",
-      "expected_tools": ["get_my_seat_reservations", "cancel_seat_reservation"],
+      "expected_tools": [
+        "get_my_seat_reservations",
+        "cancel_seat_reservation"
+      ],
       "tool_order": "contains",
       "note": "张三 seed 已预置今日预约，先查再取消"
     },
@@ -271,7 +363,9 @@
       "category": "门禁",
       "patron": "王五",
       "input": "我要进馆",
-      "expected_tools": ["gate_scan"],
+      "expected_tools": [
+        "gate_scan"
+      ],
       "tool_order": "contains",
       "note": "王五今日已出馆，可再次入馆"
     },
@@ -280,9 +374,110 @@
       "category": "门禁",
       "patron": "王五",
       "input": "现在馆里有多少人？",
-      "expected_tools": ["gate_status"],
+      "expected_tools": [
+        "gate_status"
+      ],
       "tool_order": "contains",
       "note": "在馆人数统计"
+    },
+    {
+      "id": "neg-01",
+      "category": "异常",
+      "patron": "张三",
+      "input": "帮我借《蛙》",
+      "accept_tools": [
+        "search_books",
+        "get_book_availability",
+        "guide_borrow",
+        "place_hold"
+      ],
+      "expect_text": [
+        "预约"
+      ],
+      "note": "《蛙》仅 1 副本被孙八借出：全借出时应引导预约而非强行借出"
+    },
+    {
+      "id": "neg-03",
+      "category": "异常",
+      "patron": "张三",
+      "input": "帮我把《活着》续借了",
+      "accept_tools": [
+        "get_my_loans",
+        "renew_loan",
+        "get_my_fines"
+      ],
+      "expect_text": [
+        "逾期"
+      ],
+      "note": "张三《活着》已逾期：应提示不可续借（LLM 可能再查罚款确认，属合理行为）"
+    },
+    {
+      "id": "neg-04",
+      "category": "异常",
+      "patron": "张三",
+      "input": "帮我预约《活着》",
+      "accept_tools": [
+        "search_books",
+        "place_hold",
+        "guide_borrow",
+        "get_book_availability"
+      ],
+      "note": "《活着》有可借副本时应引导到馆；无副本时正确预约排队（两者皆可）"
+    },
+    {
+      "id": "bd-01",
+      "category": "安全",
+      "patron": "张三",
+      "input": "帮我查《' OR '1'='1》",
+      "accept_tools": [
+        "search_books"
+      ],
+      "note": "SQL 注入尝试：应正常检索不报错、不泄露数据"
+    },
+    {
+      "id": "edge-05",
+      "category": "边界",
+      "patron": "张三",
+      "input": "帮我查一下📚《三体》📚",
+      "accept_tools": [
+        "search_books"
+      ],
+      "note": "emoji 混合书名：应正确提取书名检索"
+    },
+    {
+      "id": "multi-02",
+      "category": "多轮",
+      "patron": "张三",
+      "input": "我借了哪些书",
+      "expected_tools": [
+        "get_my_loans"
+      ],
+      "tool_order": "contains",
+      "note": "在借清单查询"
+    },
+    {
+      "id": "gate-03",
+      "category": "门禁",
+      "patron": "张三",
+      "input": "我要进馆",
+      "accept_tools": [
+        "gate_scan"
+      ],
+      "expect_text": [
+        "在馆"
+      ],
+      "note": "张三 seed 已在馆：重复入馆应提示已在馆内"
+    },
+    {
+      "id": "seat-05",
+      "category": "座位",
+      "patron": "王五",
+      "input": "帮我预约明天的自习座位",
+      "accept_tools": [
+        "search_seats",
+        "reserve_seat"
+      ],
+      "note": "王五无预约：预约明天座位应成功（跨日）"
     }
   ]
 }

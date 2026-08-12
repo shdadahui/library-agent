@@ -46,9 +46,9 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 		case strings.Contains(msg, "推荐") || strings.Contains(msg, "有什么好书") || strings.Contains(msg, "好看的书") || strings.Contains(msg, "喜欢") || strings.Contains(msg, "书单"):
 			out = l.mockRecommend(patron, emit)
 		case strings.Contains(msg, "续借"):
-			out = l.mockRenew(ctx, patron, emit)
+			out = l.mockRenew(ctx, patron, msg, emit)
 		case strings.Contains(msg, "还书") || strings.Contains(msg, "归还") || strings.Contains(msg, "还了") || strings.Contains(msg, "还掉"):
-			out = l.mockReturn(ctx, patron, emit)
+			out = l.mockReturn(ctx, patron, msg, emit)
 		case strings.Contains(msg, "罚款") || strings.Contains(msg, "欠费") || strings.Contains(msg, "逾期费") || strings.Contains(msg, "欠图书馆"):
 			out = l.mockFines(patron, emit)
 		case (strings.Contains(msg, "预约") || strings.Contains(msg, "排队")) && !strings.Contains(msg, "座位"):
@@ -288,7 +288,7 @@ func (l *Loop) mockAvailability(ctx context.Context, patron *store.Patron, msg s
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-func (l *Loop) mockRenew(ctx context.Context, patron *store.Patron, emit func(Event)) string {
+func (l *Loop) mockRenew(ctx context.Context, patron *store.Patron, msg string, emit func(Event)) string {
 	emitTool(emit, "get_my_loans", map[string]any{"patron_id": patron.ID})
 	loans, err := l.Svc.PatronLoans(patron.ID)
 	if err != nil {
@@ -298,6 +298,25 @@ func (l *Loop) mockRenew(ctx context.Context, patron *store.Patron, emit func(Ev
 	if len(loans) == 0 {
 		return "您当前没有在借图书，无需续借。"
 	}
+	// 用户指定了书名 → 只处理该书（尊重意图；逾期/不可续则明确拒绝）
+	if title := extractBookTitle(msg); title != "" {
+		for _, v := range loans {
+			if strings.Contains(v.Title, title) {
+				if v.Renewable {
+					emitTool(emit, "renew_loan", map[string]any{"loan_id": v.ID})
+					loan, err := l.Svc.Renew(v.ID)
+					if err != nil {
+						return "续借失败：" + err.Error()
+					}
+					emitResult(emit, "renew_loan", loan)
+					return fmt.Sprintf("已为您续借《%s》，新的应还日期为 %s（本次为第 %d 次续借）。", v.Title, loan.DueDate, loan.Renewals)
+				}
+				return fmt.Sprintf("《%s》无法续借：%s", v.Title, v.RenewMsg)
+			}
+		}
+		return fmt.Sprintf("您当前没有在借《%s》。", title)
+	}
+	// 未指定书名：续借第一本可续的
 	for _, v := range loans {
 		if v.Renewable {
 			emitTool(emit, "renew_loan", map[string]any{"loan_id": v.ID})
@@ -310,14 +329,14 @@ func (l *Loop) mockRenew(ctx context.Context, patron *store.Patron, emit func(Ev
 		}
 	}
 	// 都没有可续借的
-	msg := "您当前没有可续借的图书：\n"
+	msg2 := "您当前没有可续借的图书：\n"
 	for _, v := range loans {
-		msg += fmt.Sprintf("《%s》— %s\n", v.Title, v.RenewMsg)
+		msg2 += fmt.Sprintf("《%s》— %s\n", v.Title, v.RenewMsg)
 	}
-	return strings.TrimRight(msg, "\n")
+	return strings.TrimRight(msg2, "\n")
 }
 
-func (l *Loop) mockReturn(ctx context.Context, patron *store.Patron, emit func(Event)) string {
+func (l *Loop) mockReturn(ctx context.Context, patron *store.Patron, msg string, emit func(Event)) string {
 	emitTool(emit, "get_my_loans", map[string]any{"patron_id": patron.ID})
 	loans, err := l.Svc.PatronLoans(patron.ID)
 	if err != nil {
@@ -327,7 +346,21 @@ func (l *Loop) mockReturn(ctx context.Context, patron *store.Patron, emit func(E
 	if len(loans) == 0 {
 		return "您当前没有在借图书，无需归还。"
 	}
+	// 用户指定了书名 → 归还指定那本（尊重意图）
 	v := loans[0]
+	if title := extractBookTitle(msg); title != "" {
+		found := false
+		for _, x := range loans {
+			if strings.Contains(x.Title, title) {
+				v = x
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Sprintf("您当前没有在借《%s》。", title)
+		}
+	}
 	emitTool(emit, "return_book", map[string]any{"loan_id": v.ID})
 	res, err := l.Svc.Return(v.ID)
 	if err != nil {

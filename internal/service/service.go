@@ -62,6 +62,15 @@ func (s *Service) FindUserByPatronID(patronID int64) (*store.User, error) {
 // Patron 按 ID 取单个读者。
 func (s *Service) Patron(id int64) (*store.Patron, error) { return s.st.GetPatron(id) }
 
+// LoanOwner 返回借阅记录所属读者（越权校验用；不存在返回 ErrLoanNotFound）。
+func (s *Service) LoanOwner(loanID int64) (int64, error) {
+	loan, err := s.st.GetLoan(loanID)
+	if err != nil {
+		return 0, ErrLoanNotFound
+	}
+	return loan.PatronID, nil
+}
+
 // CountBooks 书目总数。
 func (s *Service) CountBooks() (int, error) { return s.st.CountBiblios() }
 

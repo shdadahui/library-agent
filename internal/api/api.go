@@ -197,7 +197,27 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"book": b, "items": items})
 }
 
-func (s *Server) handlePatrons(w http.ResponseWriter, _ *http.Request) {
+// requirePatronScope 越权校验：目标读者必须是当前用户本人（admin 可代查/代操作）。
+// 返回目标读者 ID（校验通过）。
+func (s *Server) requirePatronScope(w http.ResponseWriter, r *http.Request, patronID int64) (int64, bool) {
+	u := currentUser(r)
+	if u == nil {
+		writeErr(w, http.StatusUnauthorized, "请先登录")
+		return 0, false
+	}
+	if u.PatronID != patronID && !IsAdmin(r) {
+		writeErr(w, http.StatusForbidden, "无权访问其他读者的数据")
+		return 0, false
+	}
+	return patronID, true
+}
+
+func (s *Server) handlePatrons(w http.ResponseWriter, r *http.Request) {
+	// 读者列表仅管理员可见（运营场景）
+	if !IsAdmin(r) {
+		writeErr(w, http.StatusForbidden, "需要管理员权限")
+		return
+	}
 	patrons, err := s.Svc.Patrons()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -210,6 +230,9 @@ func (s *Server) handlePatronLoans(w http.ResponseWriter, r *http.Request) {
 	pid, err := pathID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, ok := s.requirePatronScope(w, r, pid); !ok {
 		return
 	}
 	loans, err := s.Svc.PatronLoans(pid)
@@ -226,6 +249,9 @@ func (s *Server) handlePatronHistory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if _, ok := s.requirePatronScope(w, r, pid); !ok {
+		return
+	}
 	loans, err := s.Svc.LoanHistory(pid)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err.Error())
@@ -238,6 +264,9 @@ func (s *Server) handlePatronFines(w http.ResponseWriter, r *http.Request) {
 	pid, err := pathID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, ok := s.requirePatronScope(w, r, pid); !ok {
 		return
 	}
 	fines, err := s.Svc.Fines(pid)
@@ -254,12 +283,24 @@ func (s *Server) handlePatronHolds(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if _, ok := s.requirePatronScope(w, r, pid); !ok {
+		return
+	}
 	holds, err := s.Svc.PatronHolds(pid)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, holds)
+}
+
+// currentPatronID 返回当前登录用户绑定的读者 ID（必须已登录）。
+func currentPatronID(r *http.Request) (int64, bool) {
+	u := currentUser(r)
+	if u == nil {
+		return 0, false
+	}
+	return u.PatronID, true
 }
 
 func (s *Server) handleBorrow(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +311,20 @@ func (s *Server) handleBorrow(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	loan, err := s.Svc.Borrow(body.PatronID, body.ItemID)
+	// 归属：默认当前登录用户；body.PatronID 仅管理员可代指定
+	pid, ok := currentPatronID(r)
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+	if body.PatronID != 0 && body.PatronID != pid && !IsAdmin(r) {
+		writeErr(w, http.StatusForbidden, "无权为其他读者借书")
+		return
+	}
+	if body.PatronID != 0 {
+		pid = body.PatronID
+	}
+	loan, err := s.Svc.Borrow(pid, body.ItemID)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
@@ -282,6 +336,15 @@ func (s *Server) handleReturn(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// 归属：仅借阅人本人或管理员可还书
+	owner, err := s.Svc.LoanOwner(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if _, ok := s.requirePatronScope(w, r, owner); !ok {
 		return
 	}
 	res, err := s.Svc.Return(id)
@@ -296,6 +359,15 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request) {
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// 归属：仅借阅人本人或管理员可续借
+	owner, err := s.Svc.LoanOwner(id)
+	if err != nil {
+		writeErr(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if _, ok := s.requirePatronScope(w, r, owner); !ok {
 		return
 	}
 	loan, err := s.Svc.Renew(id)
@@ -314,7 +386,20 @@ func (s *Server) handlePlaceHold(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	hold, err := s.Svc.PlaceHold(body.PatronID, body.BookID)
+	// 归属：默认当前登录用户；body.PatronID 仅管理员可代指定
+	pid, ok := currentPatronID(r)
+	if !ok {
+		writeErr(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+	if body.PatronID != 0 && body.PatronID != pid && !IsAdmin(r) {
+		writeErr(w, http.StatusForbidden, "无权为其他读者预约")
+		return
+	}
+	if body.PatronID != 0 {
+		pid = body.PatronID
+	}
+	hold, err := s.Svc.PlaceHold(pid, body.BookID)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return
