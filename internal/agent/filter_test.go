@@ -11,11 +11,28 @@ func TestPreFilterLibrary(t *testing.T) {
 		"帮我续借《活着》",
 		"我有哪些罚款",
 		"图书馆有多少藏书",
-		"你们图书馆几点关门", // 保守放行，由 LLM/mock 引导
+		"帮我预约一个自习座位",
+		"图书馆能借几本书",
 	}
 	for _, c := range cases {
 		if fr := PreFilter(c); fr.Handled {
 			t.Errorf("图书馆相关问题「%s」不应被拦截", c)
+		}
+	}
+}
+
+// TestPreFilterTimeIrrelevant 时间/运营类问题应拦截（本地回复，省 token）。
+func TestPreFilterTimeIrrelevant(t *testing.T) {
+	cases := []string{
+		"你们图书馆几点关门",
+		"图书馆几点开门",
+		"开放时间是什么",
+		"今天闭馆吗",
+	}
+	for _, c := range cases {
+		fr := PreFilter(c)
+		if !fr.Handled || fr.Reply == "" {
+			t.Errorf("时间类问题「%s」应被拦截并返回本地回复", c)
 		}
 	}
 }

@@ -130,6 +130,93 @@
   .admin-stat .card .n { font-size: 18px; font-weight: 500; color: var(--primary); }
   .admin-stat .card .l { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 
+  /* 座位/门禁弹层（复用阅读报告弹层风格） */
+  #seatModal, #gateModal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    z-index: 50; align-items: center; justify-content: center;
+  }
+  #seatModal.on, #gateModal.on { display: flex; }
+  #seatModal .box, #gateModal .box {
+    width: 640px; max-width: 94vw; max-height: 86vh; overflow-y: auto;
+    background: var(--panel); border-radius: 14px; padding: 22px;
+  }
+  #seatModal .box h2, #gateModal .box h2 { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
+  #seatModal .box .sub, #gateModal .box .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+  #seatModal .close, #gateModal .close {
+    float: right; border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted);
+  }
+  .seat-filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }
+  .seat-filters select {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); font-size: 13px;
+  }
+  .seat-filters button {
+    padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--tool-bg); color: var(--text); font-size: 13px; cursor: pointer;
+  }
+  .seat-filters button:hover { border-color: var(--primary); }
+  .seat-areas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .seat-area-tag {
+    font-size: 12px; color: var(--muted); background: var(--tool-bg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  }
+  .seat-grid { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+  .seat-row { display: flex; gap: 6px; align-items: center; }
+  .seat-row .rowlabel { width: 30px; font-size: 11px; color: var(--muted); text-align: right; }
+  .seat-cell {
+    flex: 1; max-width: 76px; text-align: center; padding: 7px 0; font-size: 12px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--tool-bg); cursor: pointer;
+    user-select: none; position: relative;
+  }
+  .seat-cell:hover { border-color: var(--primary); }
+  .seat-cell .st { display: block; font-size: 10px; color: var(--muted); }
+  .seat-cell.avail { border-color: #bcd9bc; }
+  .seat-cell.mine { border-color: var(--primary); background: var(--user-bg); }
+  .seat-cell.booked { opacity: .4; cursor: not-allowed; }
+  .seat-cell.occupied { opacity: .25; cursor: not-allowed; }
+  .seat-cell.selected { border-color: var(--primary); background: #e3eef7; box-shadow: 0 0 0 2px rgba(58,117,214,.18); }
+  .seat-legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--muted); margin-bottom: 16px; }
+  .seat-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); vertical-align: -2px; margin-right: 3px; }
+  .myresv { border-top: 1px solid var(--border); padding-top: 12px; }
+  .myresv h3 { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--muted); }
+  .myresv-item {
+    display: flex; align-items: center; gap: 10px; font-size: 13px;
+    background: var(--tool-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; margin-bottom: 6px;
+  }
+  .myresv-item .stt { margin-left: auto; font-size: 12px; }
+  .myresv-item .stt.active { color: var(--primary); }
+  .myresv-item .stt.checked_in { color: var(--ok); }
+  .myresv-item button {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  .myresv-item button:hover { border-color: var(--primary); color: var(--primary); }
+  .gate-top { display: flex; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+  .gate-card {
+    flex: 1; min-width: 130px; background: var(--tool-bg); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; text-align: center;
+  }
+  .gate-card .n { font-size: 24px; font-weight: 500; color: var(--primary); }
+  .gate-card .l { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .gate-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+  .gate-actions button {
+    flex: 1; padding: 12px 0; font-size: 14px; border-radius: 10px; border: none; cursor: pointer; font-weight: 500;
+  }
+  .gate-actions .gin { background: var(--primary); color: #fff; }
+  .gate-actions .gout { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  .gate-log { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+  .gate-log .dir { font-size: 11px; padding: 2px 7px; border-radius: 999px; }
+  .gate-log .dir.in { background: #e6f4e6; color: var(--ok); }
+  .gate-log .dir.out { background: var(--tool-bg); color: var(--muted); }
+  .gate-log .tm { margin-left: auto; color: var(--muted); font-size: 11.5px; }
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    background: #333; color: #fff; padding: 9px 18px; border-radius: 999px;
+    font-size: 13px; z-index: 99; opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  .toast.on { opacity: 1; }
+
   /* 热门图书（空态） */
   .hotbox { margin-top: 22px; text-align: left; max-width: 520px; margin-left: auto; margin-right: auto; }
   .hotbox h3 { font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
@@ -264,6 +351,8 @@
     <div id="convList"></div>
     <div class="me">
       <span class="name" id="meName"></span>
+      <button class="report" id="seatBtn" title="座位预约">🪑</button>
+      <button class="report" id="gateBtn" title="门禁状态">🚪</button>
       <button class="report" id="reportBtn" title="我的阅读报告">📊</button>
       <button class="report" id="adminBtn" title="管理面板（管理员可见）" style="display:none">📋</button>
       <button class="logout" id="logout">退出</button>
@@ -319,6 +408,51 @@
   <div class="rp-sec"><h3>最爱作者</h3><div id="rpAuthors"></div></div>
   <div class="rp-sec"><h3>阅读主题</h3><div id="rpSubjects"></div></div>
   <div class="rp-sec"><h3>近 6 个月借阅趋势</h3><div id="rpTrend"></div></div>
+</div></div>
+
+<div id="seatModal"><div class="box">
+  <button class="close" id="seatClose">✕</button>
+  <h2>🪑 座位预约</h2>
+  <div class="sub" id="seatSub">加载中…</div>
+  <div class="seat-filters">
+    <select id="seatDate"></select>
+    <select id="seatSlot">
+      <option value="morning">上午 08:00-12:00</option>
+      <option value="afternoon" selected>下午 13:00-17:00</option>
+      <option value="evening">晚上 18:00-22:00</option>
+    </select>
+    <button id="seatRefresh">刷新</button>
+  </div>
+  <div class="seat-areas" id="seatAreas"></div>
+  <div class="seat-legend">
+    <span><i style="background:var(--tool-bg)"></i>可预约</span>
+    <span><i style="background:#e3eef7;border-color:var(--primary)"></i>已选</span>
+    <span><i style="background:var(--user-bg);border-color:var(--primary)"></i>我的预约</span>
+    <span><i style="background:var(--tool-bg);opacity:.3"></i>已约满</span>
+  </div>
+  <div class="seat-grid" id="seatGrid"></div>
+  <div style="margin-bottom:14px"><button id="seatReserveBtn" style="width:100%;padding:11px 0;border:none;border-radius:10px;background:var(--primary);color:#fff;font-size:14px;font-weight:500;cursor:pointer">预约所选座位</button></div>
+  <div class="myresv">
+    <h3>我的预约</h3>
+    <div id="seatMyResv"></div>
+  </div>
+</div></div>
+
+<div id="gateModal"><div class="box">
+  <button class="close" id="gateClose">✕</button>
+  <h2>🚪 门禁系统</h2>
+  <div class="sub">扫码通行 · 实时在馆统计</div>
+  <div class="gate-top">
+    <div class="gate-card"><div class="n" id="gateInLib">-</div><div class="l">当前在馆人数</div></div>
+    <div class="gate-card"><div class="n" id="gateInToday">-</div><div class="l">今日入馆</div></div>
+    <div class="gate-card"><div class="n" id="gateOutToday">-</div><div class="l">今日出馆</div></div>
+  </div>
+  <div class="gate-actions">
+    <button class="gin" id="gateIn">📥 扫码入馆</button>
+    <button class="gout" id="gateOut">📤 扫码出馆</button>
+  </div>
+  <h3 style="font-size:13px;font-weight:500;color:var(--muted);margin-bottom:8px">最近通行记录</h3>
+  <div id="gateLogs"></div>
 </div></div>
 <script>
 "use strict";
@@ -783,6 +917,200 @@ sendBtn.onclick = send;
   mic.addEventListener("touchstart", begin, {passive: true});
   mic.addEventListener("touchend", end);
 })();
+
+/* ---------- 座位预约面板 ---------- */
+let seatSelected = null;      // 当前选中的座位对象
+let seatAreaMeta = [];        // 区域元信息
+$("#seatBtn").onclick = openSeatModal;
+$("#seatClose").onclick = () => { $("#seatModal").classList.remove("on"); };
+$("#seatModal").onclick = e => { if (e.target.id === "seatModal") $("#seatModal").classList.remove("on"); };
+
+async function openSeatModal() {
+  $("#seatModal").classList.add("on");
+  const today = new Date();
+  // 日期选项：今天 + 未来 6 天
+  const sel = $("#seatDate");
+  sel.innerHTML = "";
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today.getTime() + i * 86400000);
+    const iso = d.toISOString().slice(0, 10);
+    const opt = document.createElement("option");
+    opt.value = iso;
+    opt.textContent = (i === 0 ? "今天 " : "") + iso;
+    sel.appendChild(opt);
+  }
+  await loadSeats();
+}
+
+async function loadSeats() {
+  const date = $("#seatDate").value, slot = $("#seatSlot").value;
+  $("#seatSub").textContent = "加载中…";
+  seatSelected = null;
+  try {
+    const [avail, meta, mine] = await Promise.all([
+      api(`/api/seats/available?date=${date}&slot=${slot}`),
+      api("/api/seats/areas"),
+      api("/api/me/seat-reservations?active=1")
+    ]);
+    seatAreaMeta = meta.areas;
+    $("#seatAreas").innerHTML = meta.areas.map(a =>
+      `<span class="seat-area-tag">${a.area} · ${a.label}（${a.count} 座）</span>`).join("");
+    renderSeatGrid(avail, mine, date, slot);
+    renderMyResv(mine);
+    $("#seatSub").textContent = `${date} ${slotLabel(slot)} · 可预约 ${avail.length} 个座位`;
+  } catch (e) { $("#seatSub").textContent = "加载失败: " + e.message; }
+}
+
+function slotLabel(slot) {
+  return { morning: "上午 08:00-12:00", afternoon: "下午 13:00-17:00", evening: "晚上 18:00-22:00" }[slot] || slot;
+}
+
+// 按区域分组渲染座位网格
+function renderSeatGrid(avail, mine, date, slot) {
+  const grid = $("#seatGrid");
+  grid.innerHTML = "";
+  const availMap = {}; avail.forEach(s => { availMap[s.seat_no] = s; });
+  const mineMap = {}; mine.forEach(r => { mineMap[r.seat_no] = r; });
+  const areas = {};
+  seatAreaMeta.forEach(a => { areas[a.area] = []; });
+  avail.forEach(s => { (areas[s.area] = areas[s.area] || []).push(s); });
+
+  for (const area of Object.keys(areas)) {
+    const h = document.createElement("div");
+    h.style.cssText = "font-size:12.5px;font-weight:500;color:var(--muted);margin:6px 0 4px;";
+    h.textContent = area;
+    grid.appendChild(h);
+    // 按行分组（row 字段）
+    const rows = {};
+    areas[area].forEach(s => { (rows[s.row] = rows[s.row] || []).push(s); });
+    Object.keys(rows).sort((a, b) => a - b).forEach(rn => {
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "seat-row";
+      const lab = document.createElement("span");
+      lab.className = "rowlabel"; lab.textContent = rn + " 排";
+      rowDiv.appendChild(lab);
+      rows[rn].sort((a, b) => a.col - b.col).forEach(s => {
+        const cell = document.createElement("div");
+        cell.className = "seat-cell avail";
+        cell.innerHTML = `${s.seat_no}<span class="st">${s.seat_type}</span>`;
+        if (mineMap[s.seat_no]) cell.classList.add("mine");
+        cell.onclick = () => {
+          if (seatSelected && seatSelected.seat_id === s.id) {
+            seatSelected = null; cell.classList.remove("selected");
+          } else {
+            grid.querySelectorAll(".seat-cell.selected").forEach(c => c.classList.remove("selected"));
+            seatSelected = s; cell.classList.add("selected");
+          }
+        };
+        rowDiv.appendChild(cell);
+      });
+      grid.appendChild(rowDiv);
+    });
+  }
+  if (avail.length === 0) grid.innerHTML = "<div style='color:var(--muted);font-size:13px;text-align:center;padding:18px'>该时段暂无可用座位</div>";
+}
+
+function renderMyResv(mine) {
+  const box = $("#seatMyResv");
+  box.innerHTML = "";
+  if (!mine.length) { box.innerHTML = "<div style='color:var(--muted);font-size:12.5px'>暂无有效预约</div>"; return; }
+  mine.forEach(r => {
+    const div = document.createElement("div");
+    div.className = "myresv-item";
+    div.innerHTML = `<span>🪑 ${r.seat_no} · ${r.area}</span>
+      <span class="stt ${r.status}">${r.status === "checked_in" ? "已签到" : "待签到"}</span>`;
+    const b1 = document.createElement("button");
+    b1.textContent = "取消";
+    b1.onclick = async () => {
+      try {
+        await api(`/api/seat-reservations/${r.id}/cancel`, { method: "POST" });
+        toast("已取消预约"); await loadSeats();
+      } catch (e) { toast(e.message); }
+    };
+    div.appendChild(b1);
+    if (r.status === "active" && r.reserve_date === new Date().toISOString().slice(0, 10)) {
+      const b2 = document.createElement("button");
+      b2.textContent = "签到";
+      b2.onclick = async () => {
+        try {
+          const d = await api(`/api/seat-reservations/${r.id}/checkin`, { method: "POST" });
+          toast(`签到成功：${r.seat_no}`); await loadSeats();
+        } catch (e) { toast(e.message); }
+      };
+      div.appendChild(b2);
+    }
+    box.appendChild(div);
+  });
+}
+
+$("#seatRefresh").onclick = loadSeats;
+$("#seatSlot").onchange = loadSeats;
+$("#seatDate").onchange = loadSeats;
+$("#seatReserveBtn").onclick = async () => {
+  if (!seatSelected) { toast("请先选择一个座位"); return; }
+  try {
+    const d = await api("/api/seats/reserve", {
+      method: "POST",
+      body: JSON.stringify({
+        seat_id: seatSelected.id,
+        date: $("#seatDate").value,
+        slot: $("#seatSlot").value
+      })
+    });
+    toast(`预约成功：${d.seat_id ? "座位已锁定" : ""}，请在时段内签到`);
+    await loadSeats();
+  } catch (e) { toast(e.message); }
+};
+
+/* ---------- 门禁面板 ---------- */
+$("#gateBtn").onclick = () => { $("#gateModal").classList.add("on"); loadGateStatus(); };
+$("#gateClose").onclick = () => { $("#gateModal").classList.remove("on"); };
+$("#gateModal").onclick = e => { if (e.target.id === "gateModal") $("#gateModal").classList.remove("on"); };
+
+async function loadGateStatus() {
+  try {
+    const st = await api("/api/gate/status");
+    $("#gateInLib").textContent = st.in_library;
+    $("#gateInToday").textContent = st.in_today;
+    $("#gateOutToday").textContent = st.out_today;
+    const logs = $("#gateLogs");
+    logs.innerHTML = "";
+    (st.recent || []).forEach(g => {
+      const div = document.createElement("div");
+      div.className = "gate-log";
+      div.innerHTML = `<span class="dir ${g.direction}">${g.direction === "in" ? "入馆" : "出馆"}</span>
+        <span>${g.patron_name || "?"}</span><span style="color:var(--muted)">${g.gate}</span>
+        <span class="tm">${g.created_at}</span>`;
+      logs.appendChild(div);
+    });
+    if (!st.recent || !st.recent.length) logs.innerHTML = "<div style='color:var(--muted);font-size:12.5px'>暂无通行记录</div>";
+  } catch (e) { $("#gateInLib").textContent = "-"; }
+}
+
+async function gateScan(direction) {
+  try {
+    const d = await api("/api/gate/scan", {
+      method: "POST",
+      body: JSON.stringify({ direction, gate: "东门" })
+    });
+    const act = direction === "in" ? "入馆成功" : "出馆成功";
+    toast(`${act}：${d.patron}，当前在馆 ${d.in_library} 人${d.warnings && d.warnings.length ? "；⚠️ " + d.warnings.join("；") : ""}`);
+    await loadGateStatus();
+  } catch (e) { toast(e.message); }
+}
+$("#gateIn").onclick = () => gateScan("in");
+$("#gateOut").onclick = () => gateScan("out");
+
+/* ---------- Toast ---------- */
+let toastTimer = null;
+function toast(msg) {
+  let t = document.querySelector(".toast");
+  if (!t) { t = document.createElement("div"); t.className = "toast"; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+}
 
 /* ---------- 启动 ---------- */
 if (token) initApp(); else showAuth();

@@ -238,6 +238,51 @@
       "expected_tools": ["search_books"],
       "tool_order": "contains",
       "note": "查无此书应如实告知，不产生借阅"
+    },
+    {
+      "id": "seat-01",
+      "category": "座位",
+      "patron": "李四",
+      "input": "图书馆有哪些空座位？",
+      "expected_tools": ["search_seats"],
+      "tool_order": "contains",
+      "note": "查可用座位"
+    },
+    {
+      "id": "seat-02",
+      "category": "座位",
+      "patron": "李四",
+      "input": "帮我预约一个自习座位",
+      "expected_tools": ["search_seats", "reserve_seat"],
+      "tool_order": "contains",
+      "note": "预约座位：先查可用再预约（李四当天无预约，可成功）"
+    },
+    {
+      "id": "seat-03",
+      "category": "座位",
+      "patron": "张三",
+      "input": "我要取消座位预约",
+      "expected_tools": ["get_my_seat_reservations", "cancel_seat_reservation"],
+      "tool_order": "contains",
+      "note": "张三 seed 已预置今日预约，先查再取消"
+    },
+    {
+      "id": "gate-01",
+      "category": "门禁",
+      "patron": "王五",
+      "input": "我要进馆",
+      "expected_tools": ["gate_scan"],
+      "tool_order": "contains",
+      "note": "王五今日已出馆，可再次入馆"
+    },
+    {
+      "id": "gate-02",
+      "category": "门禁",
+      "patron": "王五",
+      "input": "现在馆里有多少人？",
+      "expected_tools": ["gate_status"],
+      "tool_order": "contains",
+      "note": "在馆人数统计"
     }
   ]
 }

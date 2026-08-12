@@ -27,6 +27,13 @@ var unrelatedKeywords = []string{
 	"今天几号", "今年是",
 }
 
+// 时间/运营类无关词：优先级高于业务词（"图书馆几点关门"含"书"但意图是问时间）。
+var timeIrrelevantKeywords = []string{
+	"几点开门", "几点关门", "几点开", "几点关", "几点",
+	"开放时间", "开馆时间", "营业时间", "工作时间", "上下班",
+	"周几开门", "周末开", "节假日开", "闭馆",
+}
+
 // 问候/闲聊（命中且无图书馆意图即拦截）。
 var chitChatKeywords = []string{
 	"你好", "您好", "嗨", "哈喽", "hello", "hi", "在吗", "谢谢", "谢了",
@@ -47,25 +54,31 @@ func PreFilter(msg string) FilterResult {
 	if strings.Contains(m, "《") {
 		return FilterResult{}
 	}
-	// 2. 图书馆业务词 → 放行（"图书馆有编程的书"含"书"，先放行避免被"编程"误伤）
+	// 2. 时间/运营类无关 → 拦截（须在业务词前，避免"图书馆"含"书"放行）
+	for _, k := range timeIrrelevantKeywords {
+		if strings.Contains(m, k) {
+			return FilterResult{Handled: true, Reply: outOfScopeReply}
+		}
+	}
+	// 3. 图书馆业务词 → 放行（"图书馆有编程的书"含"书"，先放行避免被"编程"误伤）
 	for _, k := range libraryKeywords {
 		if strings.Contains(m, k) {
 			return FilterResult{}
 		}
 	}
-	// 3. 明确无关主题 → 拦截
+	// 4. 明确无关主题 → 拦截
 	for _, k := range unrelatedKeywords {
 		if strings.Contains(m, k) {
 			return FilterResult{Handled: true, Reply: outOfScopeReply}
 		}
 	}
-	// 4. 问候/闲聊 → 拦截
+	// 5. 问候/闲聊 → 拦截
 	for _, k := range chitChatKeywords {
 		if strings.Contains(m, k) {
 			return FilterResult{Handled: true, Reply: welcomeReply}
 		}
 	}
-	// 5. 默认放行（避免误伤）
+	// 6. 默认放行（避免误伤）
 	return FilterResult{}
 }
 

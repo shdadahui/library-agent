@@ -173,6 +173,41 @@ CREATE TABLE IF NOT EXISTS messages(
   created_at VARCHAR(32) NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
+
+CREATE TABLE IF NOT EXISTS seats(
+  id {pk},
+  seat_no VARCHAR(16) NOT NULL,
+  area VARCHAR(64) NOT NULL,
+  seat_type VARCHAR(32) NOT NULL DEFAULT '普通',
+  status VARCHAR(16) NOT NULL DEFAULT 'available',
+  row_pos INTEGER NOT NULL DEFAULT 0,
+  col_pos INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_seats_no ON seats(seat_no);
+CREATE INDEX IF NOT EXISTS idx_seats_area ON seats(area);
+
+CREATE TABLE IF NOT EXISTS seat_reservations(
+  id {pk},
+  seat_id INTEGER NOT NULL,
+  patron_id INTEGER NOT NULL,
+  reserve_date VARCHAR(32) NOT NULL,
+  slot VARCHAR(16) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  created_at VARCHAR(32) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_seat_res_seat ON seat_reservations(seat_id, reserve_date, slot);
+CREATE INDEX IF NOT EXISTS idx_seat_res_patron ON seat_reservations(patron_id, reserve_date, status);
+
+CREATE TABLE IF NOT EXISTS gate_logs(
+  id {pk},
+  patron_id INTEGER NOT NULL,
+  direction VARCHAR(8) NOT NULL,
+  gate VARCHAR(32) NOT NULL DEFAULT '东门',
+  verified_by VARCHAR(16) NOT NULL DEFAULT 'card',
+  created_at VARCHAR(32) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gate_logs_patron ON gate_logs(patron_id);
+CREATE INDEX IF NOT EXISTS idx_gate_logs_time ON gate_logs(created_at);
 `
 
 // createSchema 建表与索引（幂等，逐语句执行以兼容 SQLite/MySQL 双驱动）。

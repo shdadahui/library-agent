@@ -243,7 +243,87 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 		}
 	}
 
+	// 6. 座位数据（幂等：seat_no 唯一）+ 模拟当日预约
+	seedSeats(st, idByPatron)
+
+	// 7. 门禁初始记录：今日几位演示读者在馆
+	seedGate(st, idByPatron)
+
 	return &Result{Books: len(idByTitle), Patrons: len(patrons)}, nil
+}
+
+// seedSeats 预置座位：3 个区域 72 个座位 + 当日部分预约。
+func seedSeats(st *store.Store, idByPatron map[string]int64) {
+	areas := []struct {
+		area  string
+		types []string // 循环分配座位类型
+	}{
+		{"3F 阅览区", []string{"普通", "带插座", "窗边", "带插座"}},
+		{"2F 自习区", []string{"普通", "带插座", "普通", "普通"}},
+		{"1F 研讨间", []string{"研讨间", "研讨间", "研讨间", "研讨间"}},
+	}
+	seatIDs := map[string]int64{}
+	for _, a := range areas {
+		prefix := string([]rune(a.area)[0]) // 3/2/1
+		for row := 1; row <= 6; row++ {
+			for col := 1; col <= 4; col++ {
+				no := fmt.Sprintf("%s-%d%02d", prefix, row, col)
+				se := &store.Seat{
+					SeatNo: no, Area: a.area,
+					SeatType: a.types[(row+col)%len(a.types)],
+					Status:   "available", RowPos: row, ColPos: col,
+				}
+				id, err := st.InsertSeat(se)
+				if err == nil {
+					seatIDs[no] = id
+				}
+			}
+		}
+	}
+	// 模拟当日预约：张三/李四/赵六 各约一个座位（今天下午）
+	today := store.Now()
+	simReserves := []struct{ patron, seatNo string }{
+		{"张三", "3-101"}, {"李四", "2-101"}, {"赵六", "3-201"},
+	}
+	for _, sr := range simReserves {
+		pid, ok := idByPatron[sr.patron]
+		sid, ok2 := seatIDs[sr.seatNo]
+		if !ok || !ok2 {
+			continue
+		}
+		var n int
+		_ = st.DB.QueryRow(`SELECT COUNT(*) FROM seat_reservations WHERE patron_id=? AND reserve_date=?`, pid, today).Scan(&n)
+		if n > 0 {
+			continue // 幂等：已有预约跳过
+		}
+		_, _ = st.DB.Exec(`INSERT INTO seat_reservations(seat_id,patron_id,reserve_date,slot,status,created_at) VALUES(?,?,?,?,?,?)`,
+			sid, pid, today, "afternoon", "active", store.NowDateTime())
+	}
+}
+
+// seedGate 门禁初始记录：今天张三/李四已入馆（在馆），王五已入馆出馆。
+func seedGate(st *store.Store, idByPatron map[string]int64) {
+	today := store.Now()
+	inPairs := []struct {
+		patron   string
+		direction string
+	}{
+		{"张三", "in"}, {"李四", "in"}, {"王五", "in"}, {"王五", "out"}, {"赵六", "in"},
+	}
+	for _, p := range inPairs {
+		pid, ok := idByPatron[p.patron]
+		if !ok {
+			continue
+		}
+		// 幂等：同一 (读者, 方向) 今日已有记录则跳过
+		var n int
+		_ = st.DB.QueryRow(`SELECT COUNT(*) FROM gate_logs WHERE patron_id=? AND direction=? AND created_at LIKE ?`, pid, p.direction, today+"%").Scan(&n)
+		if n > 0 {
+			continue
+		}
+		_, _ = st.DB.Exec(`INSERT INTO gate_logs(patron_id,direction,gate,verified_by,created_at) VALUES(?,?,?,?,?)`,
+			pid, p.direction, "东门", "qr", store.NowDateTime())
+	}
 }
 
 // seedLoan 直接写入借阅记录并置副本为 borrowed（用于预置场景，绕过业务规则）。

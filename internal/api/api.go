@@ -121,6 +121,17 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/patrons", s.handlePatrons)
 	m.HandleFunc("GET /api/recommend", s.handleRecommend)
 	m.HandleFunc("GET /api/me/report", s.handleMyReport)
+	m.HandleFunc("GET /api/me/seat-reservations", s.handleMySeatReservations)
+	// 座位预约
+	m.HandleFunc("GET /api/seats", s.handleSeats)
+	m.HandleFunc("GET /api/seats/areas", s.handleSeatMeta)
+	m.HandleFunc("GET /api/seats/available", s.handleAvailableSeats)
+	m.HandleFunc("POST /api/seats/reserve", s.handleReserveSeat)
+	m.HandleFunc("POST /api/seat-reservations/{id}/cancel", s.handleCancelSeatReservation)
+	m.HandleFunc("POST /api/seat-reservations/{id}/checkin", s.handleCheckinSeat)
+	// 门禁
+	m.HandleFunc("POST /api/gate/scan", s.handleGateScan)
+	m.HandleFunc("GET /api/gate/status", s.handleGateStatus)
 	// 管理员端点（路由分组：包在 requireAdmin 里）
 	m.Handle("GET /api/admin/users", requireAdmin(http.HandlerFunc(s.handleAdminUsers)))
 	m.Handle("GET /api/admin/books", requireAdmin(http.HandlerFunc(s.handleAdminBooks)))

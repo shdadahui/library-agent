@@ -83,7 +83,7 @@ func (s *Store) SearchBooks(q, lang string, limit int) ([]Biblio, error) {
 	clauses := []string{"1=1"}
 	args := []any{}
 	if q != "" {
-		like := "%" + q + "%"
+		like := "%" + normalizeQuery(q) + "%"
 		clauses = append(clauses, "(title LIKE ? OR author LIKE ? OR subjects LIKE ?)")
 		args = append(args, like, like, like)
 	}
@@ -461,3 +461,13 @@ func scanHolds(rows interface {
 }
 
 var _ = fmt.Sprintf // 保留 fmt 导入以备扩展
+
+// normalizeQuery 检索词归一化：半角罗马数字→全角、半角点/间隔符→·、去书名号。
+// 解决 LLM 将「三体Ⅱ」写成「三体II」导致的检索失败。
+func normalizeQuery(q string) string {
+	r := strings.NewReplacer(
+		"III", "Ⅲ", "II", "Ⅱ", "IV", "Ⅳ", "I", "Ⅰ",
+		".", "·", "・", "·", "《", "", "》", "",
+	)
+	return strings.TrimSpace(r.Replace(q))
+}

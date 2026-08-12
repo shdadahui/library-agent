@@ -10,6 +10,7 @@ import (
 
 	"github.com/shdadahui/library-agent/internal/rag"
 	"github.com/shdadahui/library-agent/internal/service"
+	"github.com/shdadahui/library-agent/internal/store"
 )
 
 // RagIndex 全局 RAG 知识库索引（main 注入）。
@@ -298,6 +299,173 @@ func AllTools() []*ToolDef {
 				return map[string]any{"hold": hold, "message": "预约成功，排队中"}, nil
 			},
 		},
+		{
+			Name:        "search_seats",
+			Description: "查询图书馆座位：指定日期（YYYY-MM-DD，默认今天）与时段（morning 上午/afternoon 下午/evening 晚上，默认 afternoon）可预约的座位列表（含区域、类型、座位号）。用户问\"有哪些空座位\"\"帮我看看自习座位\"\"座位预约\"时使用；预约前必须先用本工具确认目标座位可用。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"date": map[string]any{"type": "string", "description": "日期 YYYY-MM-DD，可选，默认今天"},
+					"slot": map[string]any{"type": "string", "enum": []string{"morning", "afternoon", "evening"}, "description": "时段，可选，默认 afternoon"},
+					"area": map[string]any{"type": "string", "description": "区域过滤，可选（如 3F 阅览区）"},
+				},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				date, _ := args["date"].(string)
+				if date == "" {
+					date = store.Now()
+				}
+				slot, _ := args["slot"].(string)
+				if slot == "" {
+					slot = "afternoon"
+				}
+				seats, err := s.AvailableSeats(date, slot)
+				if err != nil {
+					return nil, err
+				}
+				if len(seats) == 0 {
+					return map[string]any{"message": "该时段没有可预约的座位", "date": date, "slot": slot}, nil
+				}
+				// 按区域分组返回，避免超长 JSON
+				byArea := map[string][]map[string]any{}
+				for _, se := range seats {
+					byArea[se.Area] = append(byArea[se.Area], map[string]any{
+						"seat_id": se.ID, "seat_no": se.SeatNo, "type": se.SeatType,
+					})
+				}
+				return map[string]any{
+					"date": date, "slot": slot, "total": len(seats),
+					"areas": byArea,
+				}, nil
+			},
+		},
+		{
+			Name:        "reserve_seat",
+			Description: "预约一个座位。参数 seat_id（search_seats 返回）、date（YYYY-MM-DD）、slot（morning/afternoon/evening）。同一读者一天最多 1 个座位。用户说\"预约座位\"\"帮我占个座\"\"订自习位\"时，先 search_seats 选座再调用本工具。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID"},
+					"seat_id":   map[string]any{"type": "integer", "description": "座位 ID（search_seats 返回的 seat_id）"},
+					"date":      map[string]any{"type": "string", "description": "预约日期 YYYY-MM-DD，默认今天"},
+					"slot":      map[string]any{"type": "string", "enum": []string{"morning", "afternoon", "evening"}, "description": "时段"},
+				},
+				"required": []string{"patron_id", "seat_id", "slot"},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				sid, err := intArg(args, "seat_id")
+				if err != nil {
+					return nil, err
+				}
+				date, _ := args["date"].(string)
+				if date == "" {
+					date = store.Now()
+				}
+				slot, _ := args["slot"].(string)
+				if slot == "" {
+					slot = "afternoon"
+				}
+				r, err := s.ReserveSeat(pid, sid, date, slot)
+				if err != nil {
+					return nil, err
+				}
+				se, _ := s.SeatByID(sid)
+				return map[string]any{"reservation": r, "seat_no": seatNoOf(se), "message": "座位预约成功，请在预约时段内到馆签到"}, nil
+			},
+		},
+		{
+			Name:        "get_my_seat_reservations",
+			Description: "查询当前读者的座位预约（含座位号、区域、时段、状态）。用户问\"我预约的座位\"\"我的座位\"\"取消座位\"时先调用本工具找到 reservation_id。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID"},
+				},
+				"required": []string{"patron_id"},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				rs, err := s.MySeatReservations(pid, true)
+				if err != nil {
+					return nil, err
+				}
+				if len(rs) == 0 {
+					return map[string]any{"message": "当前没有有效的座位预约"}, nil
+				}
+				return rs, nil
+			},
+		},
+		{
+			Name:        "cancel_seat_reservation",
+			Description: "取消座位预约（reservation_id 来自 get_my_seat_reservations）。用户说\"取消座位\"\"退掉座位\"时使用。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patron_id":      map[string]any{"type": "integer", "description": "读者 ID"},
+					"reservation_id": map[string]any{"type": "integer", "description": "预约记录 ID"},
+				},
+				"required": []string{"patron_id", "reservation_id"},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				rid, err := intArg(args, "reservation_id")
+				if err != nil {
+					return nil, err
+				}
+				if err := s.CancelSeatReservation(pid, rid); err != nil {
+					return nil, err
+				}
+				return map[string]any{"message": "座位预约已取消"}, nil
+			},
+		},
+		{
+			Name:        "gate_scan",
+			Description: "门禁扫码通行：direction 为 in（入馆）或 out（出馆）。入馆时若读者有逾期图书或未缴罚款会返回提示（不拦截通行）。用户说\"我要进馆\"\"入馆\"\"出馆\"\"离开图书馆\"时使用。",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID"},
+					"direction": map[string]any{"type": "string", "enum": []string{"in", "out"}, "description": "通行方向"},
+					"gate":      map[string]any{"type": "string", "description": "闸口，可选（东门/西门/北门）"},
+				},
+				"required": []string{"patron_id", "direction"},
+			},
+			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				direction, _ := args["direction"].(string)
+				gate, _ := args["gate"].(string)
+				res, err := s.GateScan(pid, direction, gate)
+				if err != nil {
+					return nil, err
+				}
+				out := map[string]any{"result": res}
+				return out, nil
+			},
+		},
+		{
+			Name:        "gate_status",
+			Description: "查询图书馆门禁状态：当前在馆人数、今日入馆/出馆人次、最近通行记录。用户问\"馆里有多少人\"\"现在在馆人数\"\"门禁状态\"时使用。无参数。",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Handler: func(_ context.Context, s *service.Service, _ map[string]any) (any, error) {
+				return s.GateStatus()
+			},
+		},
 	}
 }
 
@@ -356,4 +524,12 @@ func resolveBookID(s *service.Service, args map[string]any) (int64, error) {
 		return 0, fmt.Errorf("未找到书名《%s》", title)
 	}
 	return books[0].ID, nil
+}
+
+// seatNoOf 从任意类型取座位号。
+func seatNoOf(se *store.Seat) string {
+	if se == nil {
+		return ""
+	}
+	return se.SeatNo
 }

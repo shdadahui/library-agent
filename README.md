@@ -44,6 +44,8 @@ docker compose up -d --build   # 需 DEEPSEEK_API_KEY 环境变量
 | 我喜欢科幻，推荐几本 | recommend_books → 按兴趣主题匹配 |
 | 我的阅读报告 | 统计借阅/最爱作者/月度趋势（侧边栏 📊） |
 | 图书馆借阅规则 | **RAG 知识库** rag_search（内置规则/政策文档） |
+| 有哪些空座位 / 帮我预约座位 | search_seats → reserve_seat（3 区域 72 座、三时段、签到占座） |
+| 我要进馆 / 馆里多少人 | gate_scan（入馆/出馆，逾期/罚款提示）→ gate_status（在馆统计） |
 | 今天天气怎么样 | **PreFilter 本地拦截**，不消耗 LLM token |
 | 续借我借的那本书（接上一轮） | 历史会话：结合上下文理解"那本书" |
 
@@ -179,6 +181,19 @@ docker-compose.yml   MySQL 8 + Redis 7
 ```
 
 
+
+## 座位预约系统
+
+- 72 个座位分布 3 个区域（3F 阅览区 / 2F 自习区 / 1F 研讨间），支持带插座/窗边/研讨间等类型
+- 三时段预约（上午 08:00-12:00 / 下午 13:00-17:00 / 晚上 18:00-22:00），同一读者一天最多 1 个座位
+- 预约 → 时段内签到占座（座位实时状态 occupied），逾期自动失效
+- API：`GET /api/seats`、`/api/seats/available?date=&slot=`、`POST /api/seats/reserve`、`POST /api/seat-reservations/{id}/cancel|checkin`、`GET /api/me/seat-reservations`
+
+## 门禁系统
+
+- 扫码通行（入馆/出馆），自动统计**当前在馆人数**（最近一次通行方向为 in 的读者数）
+- 防重复入馆 / 未入馆出馆拦截；入馆时提示逾期图书与未缴罚款（不拦截通行）
+- API：`POST /api/gate/scan {direction,gate}`、`GET /api/gate/status`
 
 ## 基于架构图的扩展
 

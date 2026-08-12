@@ -28,6 +28,21 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 		switch {
 		case strings.Contains(msg, "统计") || strings.Contains(msg, "多少藏书") || strings.Contains(msg, "藏书量") || strings.Contains(msg, "多少本") || strings.Contains(msg, "多少读者") || strings.Contains(msg, "借出多少"):
 			out = l.mockStats(patron, emit)
+		case strings.Contains(msg, "在馆") || strings.Contains(msg, "馆里多少人") || strings.Contains(msg, "门禁"):
+			out = l.mockGateStatus(patron, emit)
+		case strings.Contains(msg, "进馆") || strings.Contains(msg, "入馆") || strings.Contains(msg, "扫码进"):
+			out = l.mockGateScan(patron, "in", emit)
+		case strings.Contains(msg, "出馆") || strings.Contains(msg, "离开图书馆"):
+			out = l.mockGateScan(patron, "out", emit)
+		// 座位相关（须在"预约/签到"等通用词之前，避免被书预约意图抢占）
+		case strings.Contains(msg, "取消座位") || strings.Contains(msg, "退掉座位"):
+			out = l.mockCancelSeat(ctx, patron, emit)
+		case strings.Contains(msg, "签到") && strings.Contains(msg, "座"):
+			out = l.mockCheckinSeat(ctx, patron, emit)
+		case strings.Contains(msg, "预约座位") || strings.Contains(msg, "订座位") || strings.Contains(msg, "占个座") || strings.Contains(msg, "订自习") || (strings.Contains(msg, "座位") && strings.Contains(msg, "预约")):
+			out = l.mockReserveSeat(ctx, patron, emit)
+		case strings.Contains(msg, "座位") || strings.Contains(msg, "自习") || strings.Contains(msg, "空位") || strings.Contains(msg, "空座"):
+			out = l.mockSeats(patron, emit)
 		case strings.Contains(msg, "推荐") || strings.Contains(msg, "有什么好书") || strings.Contains(msg, "好看的书") || strings.Contains(msg, "喜欢") || strings.Contains(msg, "书单"):
 			out = l.mockRecommend(patron, emit)
 		case strings.Contains(msg, "续借"):
@@ -36,7 +51,7 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 			out = l.mockReturn(ctx, patron, emit)
 		case strings.Contains(msg, "罚款") || strings.Contains(msg, "欠费") || strings.Contains(msg, "逾期费") || strings.Contains(msg, "欠图书馆"):
 			out = l.mockFines(patron, emit)
-		case strings.Contains(msg, "预约") || strings.Contains(msg, "排队"):
+		case (strings.Contains(msg, "预约") || strings.Contains(msg, "排队")) && !strings.Contains(msg, "座位"):
 			out = l.mockHold(ctx, patron, msg, emit)
 		case strings.Contains(msg, "馆藏") || strings.Contains(msg, "可借") || strings.Contains(msg, "能借") || strings.Contains(msg, "有现书"):
 			out = l.mockAvailability(ctx, patron, msg, emit)
@@ -413,3 +428,125 @@ func splitSentences(s string) []string {
 }
 
 var _ = service.MaxActiveLoans
+
+// ---- mock：座位预约 ----
+
+func (l *Loop) mockSeats(patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "search_seats", map[string]any{"slot": "afternoon"})
+	seats, err := l.Svc.AvailableSeats(store.Now(), "afternoon")
+	if err != nil {
+		return "查询座位失败：" + err.Error()
+	}
+	emitResult(emit, "search_seats", map[string]any{"total": len(seats)})
+	if len(seats) == 0 {
+		return "今天下午暂时没有可预约的座位。"
+	}
+	byArea := map[string][]string{}
+	for _, se := range seats {
+		byArea[se.Area] = append(byArea[se.Area], se.SeatNo)
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("今天下午可预约座位共 %d 个：\n", len(seats)))
+	for area, nos := range byArea {
+		shown := nos
+		if len(shown) > 6 {
+			shown = append(shown[:6], "…")
+		}
+		sb.WriteString(fmt.Sprintf("- %s：%s\n", area, strings.Join(shown, "、")))
+	}
+	sb.WriteString("需要我帮您预约一个吗？（告诉我偏好区域即可）")
+	return strings.TrimSpace(sb.String())
+}
+
+func (l *Loop) mockReserveSeat(ctx context.Context, patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "search_seats", map[string]any{"slot": "afternoon"})
+	seats, err := l.Svc.AvailableSeats(store.Now(), "afternoon")
+	if err != nil {
+		return "查询座位失败：" + err.Error()
+	}
+	if len(seats) == 0 {
+		return "今天下午暂无可用座位。"
+	}
+	se := seats[0]
+	emitResult(emit, "search_seats", map[string]any{"total": len(seats)})
+	emitTool(emit, "reserve_seat", map[string]any{"seat_id": se.ID, "slot": "afternoon"})
+	r, err := l.Svc.ReserveSeat(patron.ID, se.ID, store.Now(), "afternoon")
+	if err != nil {
+		emitResult(emit, "reserve_seat", map[string]any{"error": err.Error()})
+		return "预约失败：" + err.Error()
+	}
+	emitResult(emit, "reserve_seat", map[string]any{"reservation_id": r.ID, "seat_no": se.SeatNo})
+	return fmt.Sprintf("已为您预约 %s 的 %s 号座位（下午 13:00-17:00），请按时到馆签到，逾时自动释放。", se.Area, se.SeatNo)
+}
+
+func (l *Loop) mockCancelSeat(ctx context.Context, patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "get_my_seat_reservations", map[string]any{"patron_id": patron.ID})
+	rs, err := l.Svc.MySeatReservations(patron.ID, true)
+	if err != nil {
+		return "查询预约失败：" + err.Error()
+	}
+	if len(rs) == 0 {
+		emitResult(emit, "get_my_seat_reservations", map[string]any{"message": "无有效预约"})
+		return "您当前没有可取消的座位预约。"
+	}
+	r := rs[0]
+	emitResult(emit, "get_my_seat_reservations", rs)
+	emitTool(emit, "cancel_seat_reservation", map[string]any{"reservation_id": r.ID})
+	if err := l.Svc.CancelSeatReservation(patron.ID, r.ID); err != nil {
+		return "取消失败：" + err.Error()
+	}
+	emitResult(emit, "cancel_seat_reservation", map[string]any{"ok": true})
+	return fmt.Sprintf("已取消 %s（%s）的座位预约。", r.ReserveDate, r.SeatNo)
+}
+
+func (l *Loop) mockCheckinSeat(ctx context.Context, patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "get_my_seat_reservations", map[string]any{"patron_id": patron.ID})
+	rs, err := l.Svc.MySeatReservations(patron.ID, true)
+	if err != nil {
+		return "查询预约失败：" + err.Error()
+	}
+	if len(rs) == 0 {
+		emitResult(emit, "get_my_seat_reservations", map[string]any{"message": "无有效预约"})
+		return "您当前没有待签到的座位预约。"
+	}
+	r := rs[0]
+	emitResult(emit, "get_my_seat_reservations", rs)
+	emitTool(emit, "checkin_seat", map[string]any{"reservation_id": r.ID})
+	nr, err := l.Svc.CheckinSeat(patron.ID, r.ID)
+	if err != nil {
+		return "签到失败：" + err.Error()
+	}
+	emitResult(emit, "checkin_seat", map[string]any{"ok": true, "status": nr.Status})
+	return fmt.Sprintf("已为您在 %s（%s）签到成功，座位 %s 已占用。", r.Area, r.SeatNo, r.SeatNo)
+}
+
+// ---- mock：门禁 ----
+
+func (l *Loop) mockGateScan(patron *store.Patron, direction string, emit func(Event)) string {
+	emitTool(emit, "gate_scan", map[string]any{"direction": direction})
+	res, err := l.Svc.GateScan(patron.ID, direction, "东门")
+	if err != nil {
+		emitResult(emit, "gate_scan", map[string]any{"error": err.Error()})
+		return err.Error()
+	}
+	emitResult(emit, "gate_scan", res)
+	action := "入馆"
+	if direction == "out" {
+		action = "出馆"
+	}
+	msg := fmt.Sprintf("✅ %s成功！%s（%s） 当前在馆 %d 人。", action, res.Patron, res.Gate, res.InLibrary)
+	if len(res.Warnings) > 0 {
+		msg += "\n⚠️ " + strings.Join(res.Warnings, "；") + "。"
+	}
+	return msg
+}
+
+func (l *Loop) mockGateStatus(patron *store.Patron, emit func(Event)) string {
+	emitTool(emit, "gate_status", map[string]any{})
+	st, err := l.Svc.GateStatus()
+	if err != nil {
+		return "查询门禁状态失败：" + err.Error()
+	}
+	emitResult(emit, "gate_status", st)
+	return fmt.Sprintf("当前在馆 %d 人；今日入馆 %d 人次、出馆 %d 人次。", st.InLibrary, st.InToday, st.OutToday)
+}

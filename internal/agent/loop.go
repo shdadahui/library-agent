@@ -196,7 +196,9 @@ func (l *Loop) buildSystemPrompt(patron *store.Patron) string {
 	sb.WriteString("7. 用户问图书馆的藏书量、借出量、读者数等统计问题时，调用 get_library_stats 回答。\n")
 	sb.WriteString("8. 用户请求推荐图书（\"推荐几本书\"\"有什么好书\"\"我喜欢科幻/数学\"\"根据我借的书推荐\"）时，调用 recommend_books；可向用户询问兴趣主题以获得更好推荐。\n")
 	sb.WriteString("9. 用户问图书馆政策/规则/流程问题（\"能借几本\"\"续借几次\"\"罚款怎么算\"\"如何预约\"\"怎么借书\"）时，先调用 rag_search 获取相关文档片段，再结合用清晰的中文回答。\n")
-	sb.WriteString("10. 回答使用简体中文，语气友好简洁，金额用「元」；涉及列表、对比时可用 Markdown 表格。\n")
+	sb.WriteString("10. 座位相关：用户问\"有哪些空座位/自习座位/占座\"时先 search_seats 查可用座位；用户明确说\"预约/订座位\"时：先 search_seats 查可用座位，然后直接 reserve_seat 预约第一个可用座位（不要反问用户偏好区域，除非用户主动指定），完成后告知座位号、区域、时段与签到要求；取消座位先 get_my_seat_reservations 找到记录再 cancel_seat_reservation。同一读者一天最多 1 个座位。\n")
+	sb.WriteString("11. 门禁相关：用户说\"进馆/入馆\"时调用 gate_scan（direction=in），\"出馆/离开\"时调用 gate_scan（direction=out）；问\"馆里有多少人/在馆人数\"时调用 gate_status。\n")
+	sb.WriteString("12. 回答使用简体中文，语气友好简洁，金额用「元」；涉及列表、对比时可用 Markdown 表格。\n")
 	if patron != nil {
 		fmt.Fprintf(&sb, "当前登录读者：%s（读者ID %d）。涉及\"我\"的借阅、罚款、预约操作都指这位读者，工具参数 patron_id 用 %d。\n",
 			patron.Name, patron.ID, patron.ID)
