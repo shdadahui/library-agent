@@ -117,6 +117,19 @@
   .rp-bar-row .bar i { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
   .rp-bar-row .ct { width: 34px; text-align: right; color: var(--muted); }
 
+  /* 管理员面板 */
+  #adminPanel { display: none; }
+  #adminPanel.on { display: block; }
+  .admin-section { margin-top: 22px; }
+  .admin-section h3 { font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--muted); }
+  .admin-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .admin-table th, .admin-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  .admin-table th { background: var(--tool-bg); font-weight: 500; }
+  .admin-stat { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .admin-stat .card { background: var(--tool-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+  .admin-stat .card .n { font-size: 18px; font-weight: 500; color: var(--primary); }
+  .admin-stat .card .l { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
   /* 热门图书（空态） */
   .hotbox { margin-top: 22px; text-align: left; max-width: 520px; margin-left: auto; margin-right: auto; }
   .hotbox h3 { font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
@@ -212,6 +225,12 @@
     background: var(--primary); color: #fff; cursor: pointer; font-weight: 500;
   }
   .inputrow button:disabled { opacity: .5; cursor: not-allowed; }
+  .inputrow .mic {
+    padding: 11px 13px; font-size: 16px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); color: var(--muted); cursor: pointer; user-select: none;
+  }
+  .inputrow .mic.recording { background: #fee; color: #c00; border-color: #c00; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
 
   .empty-tip { text-align: center; color: var(--muted); margin-top: 12vh; font-size: 14px; }
   .empty-tip .big { font-size: 42px; display: block; margin-bottom: 12px; }
@@ -246,6 +265,7 @@
     <div class="me">
       <span class="name" id="meName"></span>
       <button class="report" id="reportBtn" title="我的阅读报告">📊</button>
+      <button class="report" id="adminBtn" title="管理面板（管理员可见）" style="display:none">📋</button>
       <button class="logout" id="logout">退出</button>
     </div>
   </aside>
@@ -262,13 +282,27 @@
           可以让我帮你查书、预约、续借、还书，或查询罚款与藏书统计。<br>
           <span style="color:#b6bcc7;font-size:13px">例如：「帮我查一下《三体》」「我有什么书快到期了」「续借我借的那本书」</span>
         </div>
+        <div id="adminPanel">
+          <div class="admin-section">
+            <h3>📋 运营总览</h3>
+            <div class="admin-stat" id="adminStats"></div>
+          </div>
+          <div class="admin-section">
+            <h3>👥 读者列表</h3>
+            <table class="admin-table" id="adminUsers">
+              <thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>在借</th><th>电话</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
     <div id="composer">
       <div class="composer">
         <div class="suggestions" id="suggestions"></div>
         <div class="inputrow">
-          <input id="input" type="text" placeholder="输入你的问题，例如：帮我续借《活着》" autocomplete="off">
+          <input id="input" type="text" placeholder="输入你的问题，例如：帮我续借《活着》（长按 🎤 说话）" autocomplete="off">
+          <button class="mic" id="mic" title="长按说话（Web Speech API）">🎤</button>
           <button id="send">发送</button>
         </div>
       </div>
@@ -379,6 +413,7 @@ async function initApp() {
     loadConversations();
     loadSuggestions();
     loadHotBooks();
+    if (currentUser.Role === "admin" || currentUser.Role === "admin") { $("#adminBtn").style.display = ""; }
     const h = await fetch("/api/health").then(r => r.json());
     $("#providerBadge").textContent = "LLM: " + (h.provider || "mock") + (h.provider === "mock" ? " · 演示模式" : "");
     input.focus();
@@ -386,6 +421,35 @@ async function initApp() {
     showAuth();
   }
 }
+
+/* ---------- 管理员面板 ---------- */
+$("#adminBtn").onclick = async () => {
+  const panel = $("#adminPanel");
+  if (panel.classList.contains("on")) {
+    panel.classList.remove("on"); $("#adminBtn").textContent = "📋"; return;
+  }
+  try {
+    const [stats, users] = await Promise.all([api("/api/admin/stats"), api("/api/admin/users")]);
+    $("#adminStats").innerHTML =
+      '<div class="card"><div class="n">' + stats.books + '</div><div class="l">藏书</div></div>' +
+      '<div class="card"><div class="n">' + stats.copies + '</div><div class="l">副本</div></div>' +
+      '<div class="card"><div class="n">' + stats.borrowed + '</div><div class="l">在借</div></div>' +
+      '<div class="card"><div class="n">' + stats.patrons + '</div><div class="l">读者</div></div>' +
+      '<div class="card"><div class="n">' + stats.unpaid_fines_yuan + '</div><div class="l">未缴罚款¥</div></div>' +
+      '<div class="card"><div class="n">' + stats.holds_waiting + '</div><div class="l">预约中</div></div>' +
+      '<div class="card"><div class="n">' + stats.available + '</div><div class="l">可借副本</div></div>';
+    const tb = $("#adminUsers").querySelector("tbody");
+    tb.innerHTML = "";
+    users.slice(0, 50).forEach(u => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + u.name + "</td><td>" + (u.username || "-") + "</td><td>" +
+        (u.role || "-") + "</td><td>" + (u.active_loans || 0) + "</td><td>" + (u.phone || "") + "</td>";
+      tb.appendChild(tr);
+    });
+    panel.classList.add("on");
+    $("#adminBtn").textContent = "✕";
+  } catch (e) { alert("加载管理面板失败: " + e.message); }
+};
 
 /* ---------- 热门图书（空态展示） ---------- */
 async function loadHotBooks() {
@@ -692,6 +756,33 @@ function extractOnlineLinks(result) {
 
 input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
 sendBtn.onclick = send;
+
+/* ---------- ASR 语音输入（Web Speech API） ---------- */
+(function setupMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = $("#mic");
+  if (!SR) { mic.style.display = "none"; return; }
+  const rec = new SR();
+  rec.lang = "zh-CN"; rec.continuous = true; rec.interimResults = true;
+  let recognising = false;
+  const start = () => { try { rec.start(); } catch (e) {} };
+  const stop = () => { try { rec.stop(); } catch (e) {} };
+  rec.onstart = () => { recognising = true; mic.classList.add("recording"); mic.textContent = "⏺"; };
+  rec.onend = () => { recognising = false; mic.classList.remove("recording"); mic.textContent = "🎤"; };
+  rec.onerror = () => { recognising = false; mic.classList.remove("recording"); mic.textContent = "🎤"; };
+  rec.onresult = e => {
+    let txt = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
+    input.value = txt;
+  };
+  const begin = (ev) => { ev.preventDefault(); if (!recognising) start(); };
+  const end = () => { if (recognising) stop(); };
+  mic.addEventListener("mousedown", begin);
+  mic.addEventListener("mouseup", end);
+  mic.addEventListener("mouseleave", end);
+  mic.addEventListener("touchstart", begin, {passive: true});
+  mic.addEventListener("touchend", end);
+})();
 
 /* ---------- 启动 ---------- */
 if (token) initApp(); else showAuth();
