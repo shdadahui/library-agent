@@ -33,16 +33,24 @@ type ArgCheck struct {
 	Contains string `json:"contains"`
 }
 
+// HistoryMsg 多轮上下文（可选）。
+type HistoryMsg struct {
+	Role    string `json:"role"` // user / assistant
+	Content string `json:"content"`
+}
+
 // EvalCase 评测用例。
 type EvalCase struct {
-	ID            string     `json:"id"`
-	Category      string     `json:"category"`
-	Patron        string     `json:"patron"`
-	Input         string     `json:"input"`
-	ExpectedTools []string   `json:"expected_tools"`
-	ToolOrder     string     `json:"tool_order"` // exact / contains（默认 contains）
-	CheckArgs     []ArgCheck `json:"check_args"`
-	Note          string     `json:"note"`
+	ID            string       `json:"id"`
+	Category      string       `json:"category"`
+	Patron        string       `json:"patron"`
+	Input         string       `json:"input"`
+	History       []HistoryMsg `json:"history,omitempty"`
+	ExpectedTools []string     `json:"expected_tools"`
+	ToolOrder     string       `json:"tool_order"` // exact / contains（默认 contains）
+	CheckArgs     []ArgCheck   `json:"check_args"`
+	RealOnly      bool         `json:"real_only,omitempty"` // 仅真实 LLM 模式（mock 无状态不适用）
+	Note          string       `json:"note"`
 }
 
 // Suite 评测集文件结构。
@@ -127,12 +135,17 @@ func main() {
 		}
 	}
 
-	pass, fail := 0, 0
+	pass, fail, skipped := 0, 0, 0
 	var results []CaseResult
 	start := time.Now()
 
 	for _, c := range suite.Cases {
 		if *only != "" && c.ID != *only {
+			continue
+		}
+		if *mock && c.RealOnly {
+			fmt.Printf("[SKIP] %-10s %-8s %s（仅真实 LLM 模式）\n", c.ID, c.Category, c.Input)
+			skipped++
 			continue
 		}
 		r := runCase(c, cfg, *mock)
@@ -157,13 +170,13 @@ func main() {
 		rate = float64(pass) / float64(total) * 100
 	}
 	fmt.Printf("\n==== 评测汇总 ====\n")
-	fmt.Printf("用例 %d | 通过 %d | 失败 %d | 通过率 %.1f%% | 耗时 %s | 模式 %s\n",
-		total, pass, fail, rate, elapsed.Round(time.Millisecond), providerMode(cfg, *mock))
+	fmt.Printf("用例 %d | 通过 %d | 失败 %d | 跳过 %d | 通过率 %.1f%% | 耗时 %s | 模式 %s\n",
+		total, pass, fail, skipped, rate, elapsed.Round(time.Millisecond), providerMode(cfg, *mock))
 
 	report := map[string]any{
 		"generated_at": time.Now().Format(time.RFC3339),
 		"mode":         providerMode(cfg, *mock),
-		"total":        total, "pass": pass, "fail": fail, "pass_rate": rate,
+		"total":        total, "pass": pass, "fail": fail, "skipped": skipped, "pass_rate": rate,
 		"elapsed_sec": elapsed.Seconds(),
 		"results":     results,
 	}
@@ -219,9 +232,13 @@ func runCase(c EvalCase, cfg *config.Config, forceMock bool) CaseResult {
 	}
 
 	col := &collector{argsByName: map[string][]string{}}
+	history := make([]agent.Message, 0, len(c.History))
+	for _, h := range c.History {
+		history = append(history, agent.Message{Role: h.Role, Content: h.Content})
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	_, err = loop.Run(ctx, patron, c.Input, col.emit)
+	_, err = loop.Run(ctx, patron, history, c.Input, col.emit)
 	res.FinalText = truncate(col.text.String(), 120)
 	res.LatencySec = time.Since(start).Seconds()
 	if err != nil {

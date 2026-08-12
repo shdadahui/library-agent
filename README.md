@@ -1,8 +1,8 @@
 # 📚 图书馆智能助手（Library Agent）
 
-一个类似「千问点外卖」的 Agent 演示项目：**Go 后端 + Web 聊天界面**，用户用自然语言对话（"帮我查一下《三体》"、"续借我借的那本书"），AI Agent 自主调用图书馆系统工具完成查书、借书、还书、续借、预约、查询罚款等操作，工具调用过程以卡片实时展示。
+一个类似「千问点外卖」的 Agent 演示项目：**Go 后端 + Web 聊天界面**，用户用自然语言对话（"帮我查一下《三体》"、"续借我借的那本书"、"图书馆有多少藏书"），AI Agent 自主调用图书馆系统工具完成查书、预约、续借、还书、罚款查询等操作，工具调用过程以卡片实时展示，回复支持 **Markdown 渲染**（表格/列表），并支持**多轮上下文对话**。
 
-数据模型参照真实开源图书馆系统（Koha / Evergreen）：书目 → 馆藏副本 → 读者 → 流通记录，续借采用「关旧开新」做法，逾期按 0.1 元/天计罚，预约队列 FIFO。
+数据模型参照真实开源图书馆系统（Koha / Evergreen）：书目 → 馆藏副本 → 读者 → 流通记录，续借采用「关旧开新」做法，逾期按 0.1 元/天计罚，预约队列 FIFO。**借书遵循真实图书馆规则：须到馆办理，线上仅提供到馆引导与预约。**
 
 ## 快速开始
 
@@ -24,12 +24,14 @@ go run ./cmd/server
 |---|---|
 | 帮我查一下《三体》 | search_books → 展示书目与可借副本 |
 | 我借了什么书？ | get_my_loans → 列出在借清单与应还日期 |
-| 帮我续借《活着》 | get_my_loans → renew_loan（限 2 次、逾期/被预约拒绝） |
+| 帮我续借《三体》 | get_my_loans → renew_loan（限 2 次、逾期/被预约拒绝） |
 | 帮我预约《三体》 | 全部借出时 place_hold 排队 |
+| 我要借《三体Ⅱ》 | 有可借副本 → guide_borrow 引导到馆借阅（线上不借出） |
+| 图书馆有多少藏书 | get_library_stats → 藏书/在借/预约/读者统计 |
 | 我有罚款吗？ | get_my_fines → 未缴罚款 |
-| 我要借《1984》 | search → availability → borrow_book |
+| 续借我借的那本书（接上一轮） | 多轮上下文：结合历史理解"那本书" |
 
-预置演示读者：张三(P0001) 有快到期/逾期/续借过/罚款；李四(P0002) 正常在借 + 预约排队中；王五(P0003) 有借阅历史无在借。
+预置演示读者：张三(P0001) 有快到期/逾期/续借过/罚款；李四(P0002) 正常在借；王五(P0003) 有借阅历史无在借；孙八(P0006) 借走《蛙》供预约演示。
 
 ## 架构
 
@@ -74,7 +76,7 @@ go run ./cmd/server -addr :8080
 
 ## 评测集（Agent Eval）
 
-`data/eval/cases.json` 定义了 18 个评测用例，覆盖 6 类场景：检索、借阅、续借、罚款、预约、边界（闲聊/超范围/信息不足/查无此书）。判定依据：**期望工具调用序列**（exact=严格相等 / contains=子序列）+ 关键参数断言（如 `search_books.q` 需包含书名）。
+`data/eval/cases.json` 定义了 **22 个评测用例**，覆盖 7 类场景：检索、借阅、续借、罚款、预约、统计、多轮上下文、边界（闲聊/超范围/信息不足/查无此书）。判定依据：**期望工具调用序列**（exact=严格相等 / contains=子序列）+ 关键参数断言（如 `search_books.q` 需包含书名）。多轮用例标记 `real_only`（mock 无状态不适用）。
 
 ```bash
 go run ./cmd/eval -mock          # mock 模式（确定性，校验评测集与引擎对齐）
@@ -86,20 +88,29 @@ go run ./cmd/eval -only renew-01 # 只跑单个用例
 - 输出逐用例 PASS/FAIL + 工具序列对比，报告保存到 `data/eval/report-<时间戳>.json`
 - 退出码：0 全部通过；1 存在失败用例（可接入 CI）
 - 评测驱动开发：新增能力 → 先补用例 → 再迭代实现
+- 当前基线：mock 21/21、真实 DeepSeek 22/22
+
+## 监控与日志
+
+- `GET /api/metrics`：运行时统计（对话数、各工具调用次数、LLM/工具错误数、平均延迟、运行时长）
+- 请求日志：中间件输出 `[http] METHOD /path -> status (耗时)` 到 stdout
+- 对话日志：每次对话追加一行 JSON 到 `data/logs/chat-YYYYMMDD.jsonl`（读者、输入、工具序列、回复、耗时、错误）
 
 ## API 一览
 
 | 端点 | 说明 |
 |---|---|
+| `GET /api/health` | 健康检查 |
+| `GET /api/metrics` | 运行时统计（对话/工具调用/错误/延迟） |
 | `GET /api/books?q=&lang=` | 书目检索 |
 | `GET /api/books/{id}` | 书目详情 + 馆藏可用性 |
 | `GET /api/patrons` | 读者列表 |
 | `GET /api/patrons/{id}/loans · /history · /fines · /holds` | 借阅/历史/罚款/预约 |
-| `POST /api/loans` | 借书 |
+| `POST /api/loans` | 借书（线下/后台通道） |
 | `POST /api/loans/{id}/return` | 还书（自动算罚款、唤醒预约） |
 | `POST /api/loans/{id}/renew` | 续借 |
 | `POST /api/holds` | 预约 |
-| `POST /api/chat` | SSE 流式对话（message/tool_call/tool_result/done/error） |
+| `POST /api/chat` | SSE 流式对话（history 支持多轮，事件：message/tool_call/tool_result/done/error） |
 
 ## 目录结构
 

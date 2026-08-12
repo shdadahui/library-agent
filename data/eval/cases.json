@@ -1,7 +1,7 @@
 {
     "meta": {
     "name": "library-agent-eval",
-    "version": "0.2",
+    "version": "0.3",
     "note": "图书馆 Agent 功能评测集。基于内置种子数据（37 本书、6 读者、预置借阅场景）。判定依据：期望工具调用序列（exact=严格相等 / contains=子序列）+ 关键参数检查。",
     "seed": "internal/seed 内置书单；张三:三体(可续借)/活着(逾期)/围城(逾期,已续1次)+罚款2.4元；李四:百年孤独在借；王五:无在借；赵六:1984+Dune在借；三体全部副本借出(张三+钱七)保证预约可演示"
   },
@@ -12,9 +12,9 @@
       "patron": "张三",
       "input": "帮我查一下《三体》",
       "expected_tools": ["search_books"],
-      "tool_order": "exact",
+      "tool_order": "contains",
       "check_args": [{ "tool": "search_books", "param": "q", "contains": "三体" }],
-      "note": "单工具检索，书名提取"
+      "note": "单工具检索，书名提取（LLM 可能顺带查馆藏，属合理增强）"
     },
     {
       "id": "cat-02",
@@ -50,9 +50,18 @@
       "category": "借阅",
       "patron": "张三",
       "input": "我要借《三体Ⅱ·黑暗森林》",
-      "expected_tools": ["search_books", "get_book_availability", "borrow_book"],
+      "expected_tools": ["search_books", "guide_borrow"],
       "tool_order": "contains",
-      "note": "借书完整链路：检索→馆藏→借出（该副本可借）"
+      "note": "借书须到馆：有可借副本时引导到馆借阅（guide_borrow 内部含馆藏查询），不直接线上借出"
+    },
+    {
+      "id": "circ-01b",
+      "category": "借阅",
+      "patron": "王五",
+      "input": "帮我借《三体》",
+      "expected_tools": ["search_books", "get_book_availability", "place_hold"],
+      "tool_order": "contains",
+      "note": "三体全部借出：借书意图下自动转为预约排队"
     },
     {
       "id": "circ-02",
@@ -134,6 +143,38 @@
       "expected_tools": ["search_books", "place_hold"],
       "tool_order": "contains",
       "note": "蛙仅 1 副本且被孙八借出，张三可预约成功"
+    },
+    {
+      "id": "stats-01",
+      "category": "统计",
+      "patron": "张三",
+      "input": "图书馆一共有多少本藏书？",
+      "expected_tools": ["get_library_stats"],
+      "tool_order": "contains",
+      "note": "全馆统计（藏书量/副本/在借/预约/读者/罚款）"
+    },
+    {
+      "id": "stats-02",
+      "category": "统计",
+      "patron": "张三",
+      "input": "全馆现在借出了多少本书？",
+      "expected_tools": ["get_library_stats"],
+      "tool_order": "contains",
+      "note": "在借统计"
+    },
+    {
+      "id": "multi-01",
+      "category": "多轮",
+      "patron": "张三",
+      "input": "我想借这本书",
+      "history": [
+        { "role": "user", "content": "帮我查一下《百年孤独》" },
+        { "role": "assistant", "content": "为您查到《百年孤独》（加西亚·马尔克斯），共 3 个副本，其中 1 本被李四借出（应还 2026-08-23），2 本可借。" }
+      ],
+      "expected_tools": ["guide_borrow"],
+      "tool_order": "contains",
+      "real_only": true,
+      "note": "多轮上下文（仅真实模式）：「这本书」正确指向《百年孤独》，guide_borrow 内部含馆藏查询，直接引导到馆"
     },
     {
       "id": "edge-01",
