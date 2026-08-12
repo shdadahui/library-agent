@@ -120,6 +120,16 @@ func (s *Store) GetBiblio(id int64) (*Biblio, error) {
 	return &b, nil
 }
 
+// GetBiblioByTitle 按书名取书目（seed 幂等用，LIMIT 1 兼容 MySQL 严格模式）。
+func (s *Store) GetBiblioByTitle(title string) (*Biblio, error) {
+	row := s.DB.QueryRow(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id FROM biblios WHERE title=? LIMIT 1`, title)
+	var b Biblio
+	if err := row.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
 // InsertBiblio 插入书目，返回新 ID。
 func (s *Store) InsertBiblio(b *Biblio) (int64, error) {
 	res, err := s.DB.Exec(`
@@ -222,6 +232,16 @@ func (s *Store) InsertPatron(p *Patron) (int64, error) {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// GetPatronByBarcode 按读者证号取读者（seed 幂等用）。
+func (s *Store) GetPatronByBarcode(barcode string) (*Patron, error) {
+	row := s.DB.QueryRow(`SELECT id,name,barcode,phone FROM patrons WHERE barcode=?`, barcode)
+	var p Patron
+	if err := row.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone); err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // ---- 流通记录 ----

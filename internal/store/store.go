@@ -173,12 +173,29 @@ CREATE TABLE IF NOT EXISTS messages(
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id);
 `
 
-// createSchema 建表与索引（幂等）。
+// createSchema 建表与索引（幂等，逐语句执行以兼容 SQLite/MySQL 双驱动）。
 func (s *Store) createSchema(t schemaTokens) error {
 	schema := strings.ReplaceAll(schemaTemplate, "{pk}", t.pk)
 	schema = strings.ReplaceAll(schema, "{isbnIdx}", t.isbnIdx)
-	if _, err := s.DB.Exec(schema); err != nil {
-		return fmt.Errorf("建表失败: %w", err)
+	if s.Driver == "mysql" {
+		// MySQL 不支持 CREATE INDEX IF NOT EXISTS；靠忽略"索引已存在"错误保证幂等
+		schema = strings.ReplaceAll(schema, "INDEX IF NOT EXISTS", "INDEX")
+	}
+	for _, stmt := range strings.Split(schema, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := s.DB.Exec(stmt); err != nil {
+			if s.Driver == "mysql" && (strings.Contains(err.Error(), "Duplicate key name") || strings.Contains(err.Error(), "already exists")) {
+				continue // 索引已存在（重复启动）
+			}
+			head := stmt
+			if len(head) > 80 {
+				head = head[:80] + "…"
+			}
+			return fmt.Errorf("建表失败: %w（语句: %s）", err, head)
+		}
 	}
 	return nil
 }

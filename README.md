@@ -162,7 +162,10 @@ docker-compose.yml   MySQL 8 + Redis 7
 ## 数据来源
 
 - 内置书单：37 本演示书目（中文经典/数学/英文经典，含《三体》《活着》《百年孤独》）
-- `-fetch` 扩充：Open Library Search API（CC0 公共领域元数据），可扩至 2000+ 本
+- `-fetch` 扩充（双源容错，seed 幂等可重复执行）：
+  - Open Library Search API（CC0 公共领域元数据）
+  - **Gutendex**（Project Gutenberg API，Open Library 不可用时自动兜底，已实测扩至 **2000+ 本**）
+- 每位演示读者预置 10~17 条模拟借阅历史（供推荐系统与借阅历史展示）
 
 ## License
 

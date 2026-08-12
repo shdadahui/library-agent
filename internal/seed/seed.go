@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
@@ -51,17 +52,25 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 
 	if fetch {
 		fetched := fetchOpenLibrary(fetchRows)
+		if len(fetched) == 0 {
+			log.Printf("Open Library 不可用，改用 Gutendex（Project Gutenberg）兜底")
+			fetched = fetchGutendex(fetchRows)
+		}
 		if len(fetched) > 0 {
-			log.Printf("Open Library 扩充 %d 本", len(fetched))
+			log.Printf("外部数据源扩充 %d 本", len(fetched))
 			books = append(books, fetched...)
 		} else {
-			log.Printf("Open Library 扩充失败或为空，仅使用内置书单")
+			log.Printf("外部数据源扩充失败或为空，仅使用内置书单")
 		}
 	}
 
-	// 1. 书目 + 馆藏副本
+	// 1. 书目 + 馆藏副本（按书名幂等：已存在则跳过，支持安全重试）
 	idByTitle := map[string]int64{}
 	for _, b := range books {
+		if existing, err := st.GetBiblioByTitle(b.Title); err == nil {
+			idByTitle[b.Title] = existing.ID
+			continue
+		}
 		id, err := st.InsertBiblio(&store.Biblio{
 			Title: b.Title, Author: b.Author, ISBN: b.ISBN, Publisher: b.Publisher,
 			PublishYear: b.Year, Subjects: b.Subjects, Lang: b.Lang, CoverID: b.CoverID,
@@ -92,6 +101,10 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 	}
 	idByPatron := map[string]int64{}
 	for _, p := range patrons {
+		if existing, err := st.GetPatronByBarcode(p.Barcode); err == nil {
+			idByPatron[p.Name] = existing.ID
+			continue
+		}
 		id, err := st.InsertPatron(&p)
 		if err != nil {
 			return nil, fmt.Errorf("插入读者失败: %w", err)
@@ -210,7 +223,7 @@ func seedLoan(st *store.Store, itemID, patronID int64, checkout, due string, ren
 	}
 }
 
-// fetchOpenLibrary 从 Open Library Search API 拉取书目。
+// fetchOpenLibrary 从 Open Library Search API 拉取书目（多主题覆盖）。
 func fetchOpenLibrary(limit int) []SeedBook {
 	type doc struct {
 		Title            string   `json:"title"`
@@ -225,15 +238,29 @@ func fetchOpenLibrary(limit int) []SeedBook {
 		"subject:fiction&lang=eng",
 		"subject:science&lang=eng",
 		"subject:history&lang=eng",
+		"subject:fantasy&lang=eng",
+		"subject:classic_literature&lang=eng",
+		"subject:poetry&lang=eng",
+		"subject:biography&lang=eng",
+		"subject:mystery&lang=eng",
+		"subject:mathematics&lang=eng",
+		"subject:philosophy&lang=eng",
+		"subject:computer_science&lang=eng",
+		"subject:psychology&lang=eng",
+		"subject:physics&lang=eng",
+		"subject:economics&lang=eng",
+		"subject:chinese_literature&lang=chi",
+		"subject:chinese_fiction&lang=chi",
 	}
 	seen := map[string]bool{}
 	var out []SeedBook
+	client := &http.Client{Timeout: 15 * time.Second}
 	for _, q := range queries {
 		if len(out) >= limit {
 			break
 		}
-		url := fmt.Sprintf("https://openlibrary.org/search.json?q=%s&limit=100&fields=title,author_name,first_publish_year,subject,cover_i,language,isbn", q)
-		resp, err := http.Get(url)
+		url := fmt.Sprintf("https://openlibrary.org/search.json?q=%s&limit=200&fields=title,author_name,first_publish_year,subject,cover_i,language,isbn", q)
+		resp, err := client.Get(url)
 		if err != nil {
 			log.Printf("Open Library 请求失败: %v", err)
 			continue
@@ -276,6 +303,77 @@ func fetchOpenLibrary(limit int) []SeedBook {
 		time.Sleep(300 * time.Millisecond) // 温和限速
 	}
 	return out
+}
+
+// fetchGutendex 从 Gutendex（Project Gutenberg API）分页拉取书目（Open Library 不可用时的兜底源）。
+func fetchGutendex(limit int) []SeedBook {
+	type author struct {
+		Name string `json:"name"`
+	}
+	type book struct {
+		Title    string   `json:"title"`
+		Authors  []author `json:"authors"`
+		Subjects []string `json:"subjects"`
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	seen := map[string]bool{}
+	var out []SeedBook
+	for page := 1; len(out) < limit && page <= 400; page++ {
+		url := fmt.Sprintf("https://gutendex.com/books?page=%d", page)
+		resp, err := client.Get(url)
+		if err != nil {
+			log.Printf("Gutendex 第 %d 页请求失败: %v", page, err)
+			time.Sleep(2 * time.Second)
+			continue // 单页失败不中断，继续后续页
+		}
+		var payload struct {
+			Results []book `json:"results"`
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+		resp.Body.Close()
+		if err := json.Unmarshal(body, &payload); err != nil {
+			log.Printf("Gutendex 第 %d 页解析失败: %v", page, err)
+			continue
+		}
+		if len(payload.Results) == 0 {
+			break // 正常拉完
+		}
+		for _, b := range payload.Results {
+			if len(out) >= limit {
+				break
+			}
+			if b.Title == "" || seen[b.Title] {
+				continue
+			}
+			seen[b.Title] = true
+			authorName := ""
+			if len(b.Authors) > 0 {
+				authorName = normalizeAuthor(b.Authors[0].Name)
+			}
+			subj := ""
+			if len(b.Subjects) > 0 {
+				n := 2
+				if len(b.Subjects) < n {
+					n = len(b.Subjects)
+				}
+				subj = strings.Join(b.Subjects[:n], "，")
+			}
+			out = append(out, SeedBook{
+				Title: b.Title, Author: authorName, Subjects: subj, Lang: "en",
+			})
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return out
+}
+
+// normalizeAuthor 将 "Last, First" 转为 "First Last"。
+func normalizeAuthor(name string) string {
+	parts := strings.SplitN(name, ",", 2)
+	if len(parts) == 2 {
+		return strings.TrimSpace(parts[1]) + " " + strings.TrimSpace(parts[0])
+	}
+	return strings.TrimSpace(name)
 }
 
 var _ = sql.ErrNoRows
