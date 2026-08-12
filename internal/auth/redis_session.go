@@ -19,8 +19,11 @@ func NewRedisSessionStore(addr, password string, db int) (*RedisSessionStore, er
 	if addr == "" {
 		return nil, fmt.Errorf("redis 地址为空")
 	}
-	client := redis.NewClient(&redis.Options{Addr: addr, Password: password, DB: db})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	client := redis.NewClient(&redis.Options{
+		Addr: addr, Password: password, DB: db,
+		MaxRetries: 1, // 连接失败快速降级，避免启动卡顿
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
 		return nil, fmt.Errorf("连接 Redis %s 失败: %w", addr, err)
