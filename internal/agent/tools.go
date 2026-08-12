@@ -48,7 +48,7 @@ func AllTools() []*ToolDef {
 		},
 		{
 			Name:        "get_book_availability",
-			Description: "查询某本书的馆藏状态：各副本是否可借、借出时的应还日期、预约排队人数。参数 book_id 与 title 二选一。",
+			Description: "查询某本书的馆藏状态：各副本是否可借（available）、借出时的借阅人与应还日期、预约排队人数（queue_count）、全书是否有可借副本（has_available）。参数 book_id 与 title 二选一。",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -195,7 +195,7 @@ func AllTools() []*ToolDef {
 		},
 		{
 			Name:        "place_hold",
-			Description: "预约一本书。当书全部副本被借出时，读者可以预约排队，归还后自动通知。用户说\"预约\"\"帮我排队\"时使用。",
+			Description: "预约一本书。无论当前排队人数多少，只要该书全部副本被借出（has_available 为 false）且读者尚未预约，就调用本工具为读者排队，归还后自动通知。用户说\"预约\"\"帮我排队\"时使用。",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

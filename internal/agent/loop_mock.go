@@ -22,21 +22,27 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 	var out string
 
 	switch {
+	case isChitChat(msg):
+		out = "您好！我是图书馆智能助手，可以帮您查书、借书、还书、续借、预约，或查询罚款。请问需要什么帮助？"
+	case isOutOfScope(msg):
+		out = "抱歉，我只擅长处理图书馆相关的事务（查书、借还、续借、预约、罚款等），这个问题超出我的能力范围。"
 	case strings.Contains(msg, "续借"):
 		out = l.mockRenew(ctx, patron, emit)
-	case strings.Contains(msg, "还书") || strings.Contains(msg, "归还"):
+	case strings.Contains(msg, "还书") || strings.Contains(msg, "归还") || strings.Contains(msg, "还了") || strings.Contains(msg, "还掉"):
 		out = l.mockReturn(ctx, patron, emit)
-	case strings.Contains(msg, "罚款") || strings.Contains(msg, "欠费") || strings.Contains(msg, "逾期费"):
+	case strings.Contains(msg, "罚款") || strings.Contains(msg, "欠费") || strings.Contains(msg, "逾期费") || strings.Contains(msg, "欠图书馆"):
 		out = l.mockFines(patron, emit)
 	case strings.Contains(msg, "预约") || strings.Contains(msg, "排队"):
 		out = l.mockHold(ctx, patron, msg, emit)
-	case strings.Contains(msg, "借") && (strings.Contains(msg, "借了") || strings.Contains(msg, "借阅") || strings.Contains(msg, "我借")):
+	case strings.Contains(msg, "馆藏") || strings.Contains(msg, "可借") || strings.Contains(msg, "能借") || strings.Contains(msg, "有现书"):
+		out = l.mockAvailability(ctx, patron, msg, emit)
+	case strings.Contains(msg, "我借了") || strings.Contains(msg, "我借的") || strings.Contains(msg, "借阅") || strings.Contains(msg, "我借了什么"):
 		out = l.mockLoans(patron, emit)
 	case strings.Contains(msg, "借"):
 		out = l.mockBorrow(ctx, patron, msg, emit)
 	case strings.Contains(msg, "查") || strings.Contains(msg, "找") || strings.Contains(msg, "搜") || strings.Contains(msg, "有没有"):
 		out = l.mockSearch(ctx, patron, msg, emit)
-	case strings.Contains(msg, "到期") || strings.Contains(msg, "快还") || strings.Contains(msg, "我借了什么") || strings.Contains(msg, "借的书"):
+	case strings.Contains(msg, "到期") || strings.Contains(msg, "快还"):
 		out = l.mockLoans(patron, emit)
 	default:
 		out = l.mockSearch(ctx, patron, msg, emit)
@@ -116,10 +122,12 @@ func (l *Loop) mockBorrow(ctx context.Context, patron *store.Patron, msg string,
 		return "没有找到《" + q + "》这本书。"
 	}
 	emitResult(emit, "search_books", books)
+	emitTool(emit, "get_book_availability", map[string]any{"book_id": books[0].ID})
 	_, items, err := l.Svc.BookAvailability(books[0].ID)
 	if err != nil {
 		return "查询馆藏出错：" + err.Error()
 	}
+	emitResult(emit, "get_book_availability", items)
 	var itemID int64
 	for _, it := range items {
 		if it.Status == "available" {
@@ -143,6 +151,52 @@ func (l *Loop) mockBorrow(ctx context.Context, patron *store.Patron, msg string,
 	}
 	emitResult(emit, "borrow_book", loan)
 	return fmt.Sprintf("借阅成功！《%s》应还日期为 %s，请按时归还。", books[0].Title, loan.DueDate)
+}
+
+// mockAvailability 查询馆藏：先检索书目，再查各副本状态。
+func (l *Loop) mockAvailability(ctx context.Context, patron *store.Patron, msg string, emit func(Event)) string {
+	q := extractBookTitle(msg)
+	if q == "" {
+		q = strings.Trim(strings.TrimSpace(msg), "？?。，,！!")
+	}
+	if q == "" {
+		return "请问您想查询哪本书的馆藏？可以告诉我书名，例如「《三体》有可借的吗」。"
+	}
+	emitTool(emit, "search_books", map[string]any{"q": q})
+	books, err := l.Svc.SearchBooks(q, "", 5)
+	if err != nil {
+		return "查询出错：" + err.Error()
+	}
+	emitResult(emit, "search_books", books)
+	if len(books) == 0 {
+		return "没有找到《" + q + "》这本书。"
+	}
+	var sb strings.Builder
+	for _, b := range books {
+		sb.WriteString(fmt.Sprintf("《%s》 %s（书目ID %d）\n", b.Title, b.Author, b.ID))
+		emitTool(emit, "get_book_availability", map[string]any{"book_id": b.ID})
+		bk, items, err := l.Svc.BookAvailability(b.ID)
+		if err != nil {
+			sb.WriteString("  查询失败\n")
+			continue
+		}
+		emitResult(emit, "get_book_availability", items)
+		_ = bk
+		for _, it := range items {
+			switch it.Status {
+			case "available":
+				sb.WriteString(fmt.Sprintf("  · 副本 %s：可借（%s）\n", it.Barcode, it.Location))
+			case "borrowed":
+				sb.WriteString(fmt.Sprintf("  · 副本 %s：借出中（应还 %s）\n", it.Barcode, it.DueDate))
+			default:
+				sb.WriteString(fmt.Sprintf("  · 副本 %s：%s\n", it.Barcode, it.Status))
+			}
+		}
+		if len(items) == 0 {
+			sb.WriteString("  · 暂无馆藏副本\n")
+		}
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func (l *Loop) mockRenew(ctx context.Context, patron *store.Patron, emit func(Event)) string {
@@ -253,6 +307,28 @@ func emitResult(emit func(Event), name string, result any) {
 }
 
 var bookTitleRe = regexp.MustCompile(`《([^》]+)》`)
+
+// isChitChat 纯闲聊（不调用工具）。
+func isChitChat(msg string) bool {
+	greetings := []string{"你好", "您好", "嗨", "哈喽", "hello", "hi", "在吗", "谢谢", "谢了", "辛苦了", "再见"}
+	for _, g := range greetings {
+		if strings.Contains(strings.ToLower(msg), g) {
+			return true
+		}
+	}
+	return false
+}
+
+// isOutOfScope 超出能力范围（不调用工具，礼貌说明）。
+func isOutOfScope(msg string) bool {
+	outs := []string{"关门", "几点", "营业", "开放时间", "地址", "在哪", "怎么走", "天气", "帮我写", "翻译", "讲个笑话", "算一下", "推荐电影"}
+	for _, o := range outs {
+		if strings.Contains(msg, o) {
+			return true
+		}
+	}
+	return false
+}
 
 // extractBookTitle 提取用户消息中的书名（书名号内内容）。
 func extractBookTitle(msg string) string {

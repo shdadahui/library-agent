@@ -64,15 +64,32 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, userMsg string, em
 			Tools:       ToOpenAI(l.Tools),
 			Temperature: l.Cfg.Temperature,
 		}
-		toolCalls, content, err := l.Client.ChatStream(ctx, req, func(delta string) {
-			finalText.WriteString(delta)
-			emit(Event{Type: "message", Data: map[string]string{"delta": delta}})
-		})
+		var toolCalls []ToolCall
+		var content string
+		var err error
+		// LLM 偶发返回空响应：无内容且无工具调用时重试（最多 2 次）
+		for attempt := 0; attempt < 2; attempt++ {
+			toolCalls, content, err = l.Client.ChatStream(ctx, req, func(delta string) {
+				finalText.WriteString(delta)
+				emit(Event{Type: "message", Data: map[string]string{"delta": delta}})
+			})
+			if err != nil {
+				break
+			}
+			if len(toolCalls) > 0 || content != "" {
+				break
+			}
+		}
 		if err != nil {
 			emit(Event{Type: "error", Data: map[string]string{"message": err.Error()}})
 			return finalText.String(), err
 		}
 		if len(toolCalls) == 0 {
+			if content == "" {
+				content = "抱歉，我暂时无法处理这个请求，请换个说法试试。"
+				finalText.WriteString(content)
+				emit(Event{Type: "message", Data: map[string]string{"delta": content}})
+			}
 			break // 无工具调用，对话完成
 		}
 		// 记录助手消息（含工具调用），随后逐个执行
@@ -133,7 +150,9 @@ func (l *Loop) buildSystemPrompt(patron *store.Patron) string {
 	sb.WriteString("2. 借书需要可借的馆藏副本；书全被借出时建议预约。\n")
 	sb.WriteString("3. 续借每本最多 2 次；逾期或被人预约时不可续借。\n")
 	sb.WriteString("4. 逾期罚款按 0.1 元/天计算，还书时自动结算。\n")
-	sb.WriteString("5. 回答使用简体中文，语气友好简洁，金额用「元」。\n")
+	sb.WriteString("5. 用户明确说「预约」某本书时，检索并确认无可用副本后应直接调用 place_hold 完成预约，无需再征求确认。\n")
+	sb.WriteString("6. 还书/续借时若用户未指定具体书目，先查询在借清单，再询问用户要处理哪一本；不要擅自选择。\n")
+	sb.WriteString("7. 回答使用简体中文，语气友好简洁，金额用「元」。\n")
 	if patron != nil {
 		fmt.Fprintf(&sb, "当前登录读者：%s（读者ID %d）。涉及\"我\"的借阅、罚款、预约操作都指这位读者，工具参数 patron_id 用 %d。\n",
 			patron.Name, patron.ID, patron.ID)

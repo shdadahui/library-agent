@@ -85,9 +85,10 @@ func (s *Service) SearchBooks(q, lang string, limit int) ([]BookSearchResult, er
 // ItemView 副本视图（含当前借阅人/应还日）。
 type ItemView struct {
 	store.Item
-	Borrower   string `json:"borrower,omitempty"`
-	DueDate    string `json:"due_date,omitempty"`
-	WaitQueue  int    `json:"wait_queue"`
+	Borrower     string `json:"borrower,omitempty"`
+	DueDate      string `json:"due_date,omitempty"`
+	QueueCount   int    `json:"queue_count"`
+	HasAvailable bool   `json:"has_available"`
 }
 
 // BookAvailability 书目详情 + 各副本可用性。
@@ -101,9 +102,16 @@ func (s *Service) BookAvailability(biblioID int64) (*store.Biblio, []ItemView, e
 		return nil, nil, err
 	}
 	holds, _ := s.st.WaitingHolds(biblioID)
+	hasAvailable := false
+	for _, it := range items {
+		if it.Status == "available" {
+			hasAvailable = true
+			break
+		}
+	}
 	views := make([]ItemView, 0, len(items))
 	for _, it := range items {
-		v := ItemView{Item: it, WaitQueue: len(holds)}
+		v := ItemView{Item: it, QueueCount: len(holds), HasAvailable: hasAvailable}
 		if it.Status == "borrowed" {
 			if loan, err := s.st.ActiveLoanByItem(it.ID); err == nil {
 				v.DueDate = loan.DueDate
