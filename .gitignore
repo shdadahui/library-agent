@@ -29,3 +29,4 @@ Thumbs.db
 
 data/eval/report-*.json
 data/*.log
+data/eval/*.log
