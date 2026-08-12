@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,11 +52,26 @@ type ToolFunction struct {
 
 // ChatRequest 请求体。
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Tools       []Tool    `json:"tools,omitempty"`
-	Temperature float64   `json:"temperature"`
-	Stream      bool      `json:"stream"`
+	Model         string         `json:"model"`
+	Messages      []Message      `json:"messages"`
+	Tools         []Tool         `json:"tools,omitempty"`
+	Temperature   float64        `json:"temperature"`
+	Stream        bool           `json:"stream"`
+	StreamOptions map[string]any `json:"stream_options,omitempty"` // include_usage 获取 token 用量
+}
+
+// Usage token 用量（流式响应经 stream_options.include_usage 返回）。
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// ChatResult 流式对话聚合结果。
+type ChatResult struct {
+	ToolCalls []ToolCall
+	Content   string
+	Usage     Usage // 可能为零（供应商不支持时）
 }
 
 // StreamChunk 流式响应片段。
@@ -90,30 +106,18 @@ func NewClient(baseURL, apiKey, model string) *Client {
 	}
 }
 
-// ChatNonStream 非流式对话，返回助手完整消息。
+// ChatNonStream 非流式对话，返回助手完整消息（带重试退避）。
 func (c *Client) ChatNonStream(ctx context.Context, req ChatRequest) (*Message, error) {
 	req.Stream = false
 	if req.Model == "" {
 		req.Model = c.model
 	}
 	body, _ := json.Marshal(req)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	resp, err := c.doChatRequest(ctx, body)
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-	resp, err := c.http.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("请求 LLM 失败: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, fmt.Errorf("LLM 返回 %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
 	var out struct {
 		Choices []struct {
 			Message Message `json:"message"`
@@ -135,31 +139,65 @@ func (c *Client) ChatNonStream(ctx context.Context, req ChatRequest) (*Message, 
 	return &msg, nil
 }
 
+// maxLLMAttempts 请求最大尝试次数（1 次原始 + 2 次重试）。
+const maxLLMAttempts = 3
+
+// doChatRequest 发送请求；429/5xx/网络错误按指数退避重试（1s/2s/4s），4xx 业务错误不重试。
+func (c *Client) doChatRequest(ctx context.Context, body []byte) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxLLMAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(1<<attempt) * time.Second):
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if c.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("请求 LLM 失败: %w", err)
+			if ctx.Err() != nil {
+				return nil, lastErr // 用户取消，不重试
+			}
+			continue // 网络错误可重试
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		resp.Body.Close()
+		msg := fmt.Sprintf("LLM 返回 %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = errors.New(msg)
+			continue // 限流/服务端错误可重试
+		}
+		return nil, errors.New(msg) // 4xx 业务错误不重试
+	}
+	return nil, fmt.Errorf("LLM 请求重试 %d 次仍失败: %w", maxLLMAttempts, lastErr)
+}
+
 // ChatStream 流式对话：逐块回调 content 增量与聚合后的工具调用。
-// 返回聚合出的工具调用（可能为空）与最终文本内容。
-func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onContent func(string)) ([]ToolCall, string, error) {
+// 带指数退避重试（限流/5xx/网络错误）与 token 用量采集。
+func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onContent func(string)) (*ChatResult, error) {
 	req.Stream = true
+	req.StreamOptions = map[string]any{"include_usage": true}
 	if req.Model == "" {
 		req.Model = c.model
 	}
 	body, _ := json.Marshal(req)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	resp, err := c.doChatRequest(ctx, body)
 	if err != nil {
-		return nil, "", err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
-	resp, err := c.http.Do(httpReq)
-	if err != nil {
-		return nil, "", fmt.Errorf("请求 LLM 失败: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return nil, "", fmt.Errorf("LLM 返回 %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-	}
 
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -167,6 +205,7 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onContent func
 	acc := map[int]*ToolAcc{} // index → 累积
 	var order []int
 	var fullText strings.Builder
+	var usage Usage
 
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -196,9 +235,13 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onContent func
 					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
+			Usage *Usage `json:"usage"` // 最后一个块携带（include_usage 开启时）
 		}
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // 忽略无法解析的块
+		}
+		if chunk.Usage != nil {
+			usage = *chunk.Usage
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -226,12 +269,12 @@ func (c *Client) ChatStream(ctx context.Context, req ChatRequest, onContent func
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, fullText.String(), fmt.Errorf("读取流式响应失败: %w", err)
+		return nil, fmt.Errorf("读取流式响应失败: %w", err)
 	}
 	tools := []ToolCall{}
 	for _, idx := range order {
 		a := acc[idx]
 		tools = append(tools, ToolCall{ID: a.ID, Type: "function", Function: Function{Name: a.Name, Arguments: a.Arguments}})
 	}
-	return tools, fullText.String(), nil
+	return &ChatResult{ToolCalls: tools, Content: fullText.String(), Usage: usage}, nil
 }

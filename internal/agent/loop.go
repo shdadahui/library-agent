@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/shdadahui/library-agent/internal/config"
@@ -25,6 +26,7 @@ type Loop struct {
 	Cfg     *config.Config
 	Tools   []*ToolDef
 	MaxIter int
+	Usage   Usage // 最近一次 Run 的累计 token 用量（供 metrics/日志消费）
 }
 
 // NewLoop 创建编排器。
@@ -54,6 +56,7 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 		emit(Event{Type: "done", Data: map[string]any{}})
 		return reply, nil
 	}
+	l.Usage = Usage{} // 清零本轮统计
 
 	system := l.buildSystemPrompt(patron)
 	messages := []Message{{Role: "system", Content: system}}
@@ -79,19 +82,18 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 			Tools:       ToOpenAI(l.Tools),
 			Temperature: l.Cfg.Temperature,
 		}
-		var toolCalls []ToolCall
-		var content string
+		var res *ChatResult
 		var err error
 		// LLM 偶发返回空响应：无内容且无工具调用时重试（最多 2 次）
 		for attempt := 0; attempt < 2; attempt++ {
-			toolCalls, content, err = l.Client.ChatStream(ctx, req, func(delta string) {
+			res, err = l.Client.ChatStream(ctx, req, func(delta string) {
 				finalText.WriteString(delta)
 				emit(Event{Type: "message", Data: map[string]string{"delta": delta}})
 			})
 			if err != nil {
 				break
 			}
-			if len(toolCalls) > 0 || content != "" {
+			if len(res.ToolCalls) > 0 || res.Content != "" {
 				break
 			}
 		}
@@ -99,6 +101,11 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 			emit(Event{Type: "error", Data: map[string]string{"message": err.Error()}})
 			return finalText.String(), err
 		}
+		// token 用量累计（供应商支持时）
+		l.Usage.PromptTokens += res.Usage.PromptTokens
+		l.Usage.CompletionTokens += res.Usage.CompletionTokens
+		toolCalls := res.ToolCalls
+		content := res.Content
 		if len(toolCalls) == 0 {
 			if content == "" {
 				content = "抱歉，我暂时无法处理这个请求，请换个说法试试。"
@@ -127,6 +134,7 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 const maxToolResultLen = 2000
 
 // executeTool 执行单个工具调用并推送事件，返回 JSON 字符串结果（超长截断）。
+// 执行前按工具 schema 校验参数（required/类型/枚举），不合法则回传错误让 LLM 修正。
 func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCall, emit func(Event)) string {
 	def := FindTool(l.Tools, tc.Function.Name)
 	emit(Event{Type: "tool_call", Data: map[string]any{
@@ -146,6 +154,12 @@ func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCal
 	// 工具参数中若缺 patron_id 且工具需要，自动注入当前读者（身份由会话注入）
 	if _, need := args["patron_id"]; !need && patron != nil {
 		args["patron_id"] = patron.ID
+	}
+	// schema 校验：required/类型/枚举（不合法回传错误，让 LLM 自行修正后重试）
+	if err := validateArgs(def, args); err != nil {
+		msg := "工具参数不合法: " + err.Error()
+		emit(Event{Type: "tool_result", Data: map[string]any{"id": tc.ID, "name": tc.Function.Name, "error": msg}})
+		return jsonMsg(map[string]any{"error": msg})
 	}
 	result, err := def.Handler(ctx, l.Svc, args)
 	if err != nil {
@@ -179,6 +193,71 @@ func itoaSafe(n int) string {
 		b = append([]byte{'-'}, b...)
 	}
 	return string(b)
+}
+
+// validateArgs 按工具 JSON Schema 校验参数：required 存在性、类型、枚举。
+// 校验失败返回错误，由 executeTool 回传 LLM 让其修正参数。
+func validateArgs(def *ToolDef, args map[string]any) error {
+	if def.Parameters == nil {
+		return nil
+	}
+	props, _ := def.Parameters["properties"].(map[string]any)
+	if reqList, ok := def.Parameters["required"].([]any); ok {
+		for _, r := range reqList {
+			name, _ := r.(string)
+			if _, ok := args[name]; !ok {
+				return fmt.Errorf("缺少必填参数 %s", name)
+			}
+		}
+	}
+	for name, p := range props {
+		v, ok := args[name]
+		if !ok {
+			continue
+		}
+		schema, _ := p.(map[string]any)
+		typ, _ := schema["type"].(string)
+		if typ != "" && !typeMatches(typ, v) {
+			return fmt.Errorf("参数 %s 类型应为 %s，实际 %T", name, typ, v)
+		}
+		if enum, ok := schema["enum"].([]any); ok && len(enum) > 0 {
+			sv := fmt.Sprintf("%v", v)
+			matched := false
+			for _, e := range enum {
+				if fmt.Sprintf("%v", e) == sv {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return fmt.Errorf("参数 %s 取值 %s 不在允许范围内", name, sv)
+			}
+		}
+	}
+	return nil
+}
+
+// typeMatches 校验值是否匹配 schema 类型；integer 兼容数字字符串（LLM 常传 "5"）。
+func typeMatches(typ string, v any) bool {
+	switch typ {
+	case "string":
+		_, ok := v.(string)
+		return ok
+	case "integer", "number":
+		switch t := v.(type) {
+		case float64, int64, int, json.Number:
+			return true
+		case string:
+			_, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+			return err == nil
+		}
+		return false
+	case "boolean":
+		_, ok := v.(bool)
+		return ok
+	default:
+		return true // 未知类型不拦截
+	}
 }
 
 // buildSystemPrompt 构造系统提示词（含当前读者身份）。

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/agent"
+	"github.com/shdadahui/library-agent/internal/auth"
 	"github.com/shdadahui/library-agent/internal/store"
 )
 
@@ -20,6 +22,9 @@ type ChatRequest struct {
 // maxContextMessages 注入上下文的最近消息条数（控制 token 消耗）。
 const maxContextMessages = 20
 
+// chatRatePerMin 每用户每分钟最大对话请求数（防恶意刷 token 成本）。
+const chatRatePerMin = 30
+
 // handleChat SSE 流式聊天端点。
 // 事件流：event: message / tool_call / tool_result / done / error，data 为 JSON。
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +32,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	if user == nil {
 		writeErr(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+	// 频率限流：每用户每分钟 N 次（Redis 计数，复用会话存储）
+	if err := s.Auth.CheckRate("chat_rate:", user.ID, chatRatePerMin, time.Minute); err != nil {
+		s.metrics.IncRateLimited()
+		writeErr(w, http.StatusTooManyRequests, err.Error())
 		return
 	}
 	var body ChatRequest
@@ -90,6 +101,34 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SSE 写入互斥：心跳 goroutine 与事件回调并发写同一 writer
+	var wmu sync.Mutex
+	writeSSE := func(evType string, data any) {
+		wmu.Lock()
+		defer wmu.Unlock()
+		b, _ := json.Marshal(data)
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", evType, b)
+		flusher.Flush()
+	}
+	// 心跳：LLM 长生成期间每 15s 发注释行，防止 nginx/网关断连
+	hbStop := make(chan struct{})
+	defer close(hbStop)
+	go func() {
+		t := time.NewTicker(15 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbStop:
+				return
+			case <-t.C:
+				wmu.Lock()
+				fmt.Fprint(w, ": ping\n\n")
+				flusher.Flush()
+				wmu.Unlock()
+			}
+		}
+	}()
+
 	tools := []string{}
 	var toolErr bool
 	emit := func(ev agent.Event) {
@@ -104,13 +143,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if ev.Type == "error" {
 			toolErr = true
 		}
-		data, _ := json.Marshal(ev.Data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, data)
-		flusher.Flush()
+		writeSSE(ev.Type, ev.Data)
 	}
 
 	finalText, runErr := s.Loop.Run(r.Context(), patron, history, body.Message, emit)
 	latency := time.Since(start)
+	// token 用量统计（本轮累计）
+	promptTok := int64(s.Loop.Usage.PromptTokens)
+	completionTok := int64(s.Loop.Usage.CompletionTokens)
+	if promptTok > 0 || completionTok > 0 {
+		s.metrics.AddTokens(promptTok, completionTok)
+	}
 
 	// 持久化本轮消息（user + assistant）
 	_ = s.Svc.AddMessage(cid, "user", body.Message)
@@ -145,15 +188,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"tools":           tools,
 		"output":          reply,
 		"latency_ms":      latency.Milliseconds(),
+		"prompt_tokens":   promptTok,
+		"completion_tokens": completionTok,
 		"error":           errMsg,
 	})
 
 	// 前端需要知道会话 ID（新建会话时）
 	if isNewConversation {
-		data, _ := json.Marshal(map[string]any{"conversation_id": cid})
-		fmt.Fprintf(w, "event: conversation_id\ndata: %s\n\n", data)
-		flusher.Flush()
+		writeSSE("conversation_id", map[string]any{"conversation_id": cid})
 	}
 }
 
 var _ = store.Now
+var _ = auth.ErrRateLimited

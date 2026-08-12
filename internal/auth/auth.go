@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -18,6 +19,7 @@ var (
 	ErrInvalidCredential = errors.New("用户名或密码错误")
 	ErrSessionInvalid    = errors.New("会话无效或已过期")
 	ErrTooManyAttempts   = errors.New("登录失败次数过多，请 15 分钟后再试")
+	ErrRateLimited       = errors.New("请求过于频繁，请稍后再试")
 )
 
 // 登录限流：连续失败 N 次锁定 15 分钟。
@@ -110,6 +112,18 @@ func (m *Manager) Login(username, password string) (string, *store.User, error) 
 func (m *Manager) recordFail(key string) {
 	fails, _ := m.sess.Get(key)
 	_ = m.sess.Set(key, fails+1, lockDuration)
+}
+
+// CheckRate 通用滑动窗口计数限流：prefix:key 在 window 内最多 max 次。
+// 读-改-写非严格原子（与登录限流一致），对限流场景足够；超限返回 ErrRateLimited。
+func (m *Manager) CheckRate(prefix string, key int64, max int, window time.Duration) error {
+	rateKey := prefix + fmt.Sprintf("%d", key)
+	n, _ := m.sess.Get(rateKey)
+	if n >= int64(max) {
+		return ErrRateLimited
+	}
+	_ = m.sess.Set(rateKey, n+1, window)
+	return nil
 }
 
 // Logout 注销会话。
