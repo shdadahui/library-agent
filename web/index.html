@@ -82,6 +82,30 @@
   }
   .toolcard.error { border-color: #f3c4c4; background: #fef7f7; }
 
+  /* Markdown 渲染 */
+  .bubble.md table { border-collapse: collapse; margin: 8px 0; width: 100%; font-size: 13px; }
+  .bubble.md th, .bubble.md td {
+    border: 1px solid var(--border); padding: 6px 10px; text-align: left;
+  }
+  .bubble.md th { background: var(--tool-bg); font-weight: 500; }
+  .bubble.md tr:nth-child(even) td { background: rgba(0,0,0,0.02); }
+  .bubble.md ul, .bubble.md ol { padding-left: 20px; margin: 6px 0; }
+  .bubble.md li { margin: 3px 0; }
+  .bubble.md h1, .bubble.md h2, .bubble.md h3, .bubble.md h4 {
+    font-size: 15px; font-weight: 500; margin: 10px 0 4px;
+  }
+  .bubble.md code {
+    background: var(--tool-bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px; font-size: 12.5px;
+    font-family: "SF Mono", Consolas, monospace;
+  }
+  .bubble.md blockquote {
+    border-left: 3px solid var(--border); padding-left: 10px;
+    margin: 6px 0; color: var(--muted);
+  }
+  .bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  .bubble.md p { margin: 5px 0; }
+
   /* 输入区 */
   footer {
     background: var(--panel); border-top: 1px solid var(--border); padding: 12px 16px 16px;
@@ -142,11 +166,14 @@
   </div>
 </footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
 const chat = $("#chat"), input = $("#input"), sendBtn = $("#send");
 let currentPatron = null, busy = false;
+let history = [];    // 多轮上下文（user/assistant 文本）
+let aiFullText = ""; // 当前轮 AI 完整回复（流式累积，结束后按 Markdown 渲染）
 
 const SUGGESTIONS = [
   "帮我查一下《三体》",
@@ -229,6 +256,7 @@ async function send() {
   if (!msg || busy) return;
   if (!currentPatron) { alert("请先选择读者"); return; }
   busy = true; sendBtn.disabled = true; input.value = "";
+  aiFullText = "";
 
   // 隐藏空态提示
   const tip = chat.querySelector(".empty-tip");
@@ -242,7 +270,7 @@ async function send() {
     const resp = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg, patron_id: currentPatron.id })
+      body: JSON.stringify({ message: msg, patron_id: currentPatron.id, history: history.slice(-8) })
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
@@ -256,7 +284,8 @@ async function send() {
       switch (type) {
         case "message":
           aiBubble.classList.add("typing");
-          aiBubble.textContent += data.delta || "";
+          aiFullText += data.delta || "";
+          aiBubble.textContent = aiFullText;
           scrollBottom();
           break;
         case "tool_call":
@@ -287,10 +316,12 @@ async function send() {
         }
         case "done":
           aiBubble.classList.remove("typing");
+          renderMd(aiBubble, aiFullText);
           break;
         case "error":
           aiBubble.classList.remove("typing");
-          aiBubble.textContent += "\n⚠️ " + (data.message || "发生错误");
+          aiFullText += "\n⚠️ " + (data.message || "发生错误");
+          renderMd(aiBubble, aiFullText);
           break;
       }
     };
@@ -318,10 +349,28 @@ async function send() {
     aiBubble.classList.remove("typing");
   } catch (e) {
     aiBubble.classList.remove("typing");
-    aiBubble.textContent += "\n⚠️ " + e.message;
+    aiFullText += "\n⚠️ " + e.message;
+    renderMd(aiBubble, aiFullText);
   } finally {
+    // 记录本轮对话，供下一轮多轮上下文
+    history.push({ role: "user", content: msg });
+    history.push({ role: "assistant", content: aiFullText.trim() || "（无回复）" });
+    aiFullText = "";
     busy = false; sendBtn.disabled = false; input.focus();
   }
+}
+
+/* ---------- Markdown 渲染 ---------- */
+function renderMd(el, text) {
+  el.classList.add("md");
+  if (window.marked) {
+    el.innerHTML = marked.parse(text || "");
+  } else {
+    el.innerHTML = "<pre style='white-space:pre-wrap'>" + escapeHtml(text) + "</pre>";
+  }
+}
+function escapeHtml(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /* ---------- 工具 ---------- */

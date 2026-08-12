@@ -17,25 +17,27 @@ import (
 
 // Server HTTP 服务。
 type Server struct {
-	Svc  *service.Service
-	Loop *agent.Loop
-	Cfg  *config.Config
-	mux  *http.ServeMux
+	Svc     *service.Service
+	Loop    *agent.Loop
+	Cfg     *config.Config
+	metrics *Metrics
+	mux     *http.ServeMux
 }
 
 // NewServer 创建服务并注册路由。
 func NewServer(cfg *config.Config, svc *service.Service, loop *agent.Loop) *Server {
-	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, mux: http.NewServeMux()}
+	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, metrics: NewMetrics(), mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
 
-// Handler 返回根处理器。
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler 返回根处理器（含请求日志中间件）。
+func (s *Server) Handler() http.Handler { return s.withLogging(s.mux) }
 
 func (s *Server) routes() {
 	m := s.mux
 	m.HandleFunc("GET /api/health", s.handleHealth)
+	m.HandleFunc("GET /api/metrics", s.handleMetrics)
 	m.HandleFunc("GET /api/books", s.handleSearchBooks)
 	m.HandleFunc("GET /api/books/{id}", s.handleBookDetail)
 	m.HandleFunc("GET /api/patrons", s.handlePatrons)
