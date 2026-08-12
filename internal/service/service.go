@@ -46,6 +46,19 @@ func New(st *store.Store) *Service { return &Service{st: st} }
 // Patrons 全部读者（演示身份切换）。
 func (s *Service) Patrons() ([]store.Patron, error) { return s.st.ListPatrons() }
 
+// ListAllBooks 全库书目（分页，管理员用）。
+func (s *Service) ListAllBooks(limit, offset int) ([]store.Biblio, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	return s.st.ListBooks(limit, offset)
+}
+
+// FindUserByPatronID 按读者 ID 找关联登录用户。
+func (s *Service) FindUserByPatronID(patronID int64) (*store.User, error) {
+	return s.st.GetUserByPatronID(patronID)
+}
+
 // Patron 按 ID 取单个读者。
 func (s *Service) Patron(id int64) (*store.Patron, error) { return s.st.GetPatron(id) }
 

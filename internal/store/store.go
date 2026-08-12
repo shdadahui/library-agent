@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS users(
   username VARCHAR(64) NOT NULL,
   password_hash VARCHAR(128) NOT NULL,
   patron_id INTEGER NOT NULL,
+  role VARCHAR(16) NOT NULL DEFAULT 'user',
   created_at VARCHAR(32) NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -200,6 +201,11 @@ func (s *Store) createSchema(t schemaTokens) error {
 	}
 	// 兼容旧库：补充新增列（忽略 duplicate column）
 	if _, err := s.DB.Exec(`ALTER TABLE biblios ADD COLUMN online_url VARCHAR(512) NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("迁移列失败: %w", err)
+		}
+	}
+	if _, err := s.DB.Exec(`ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'`); err != nil {
 		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return fmt.Errorf("迁移列失败: %w", err)
 		}

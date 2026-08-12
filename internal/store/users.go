@@ -8,6 +8,7 @@ type User struct {
 	Username     string `json:"username"`
 	PasswordHash string `json:"-"`
 	PatronID     int64  `json:"patron_id"`
+	Role         string `json:"role"` // user / admin
 	CreatedAt    string `json:"created_at"`
 }
 
@@ -33,8 +34,8 @@ type Message struct {
 
 // CreateUser 创建用户。
 func (s *Store) CreateUser(u *User) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO users(username,password_hash,patron_id,created_at) VALUES(?,?,?,?)`,
-		u.Username, u.PasswordHash, u.PatronID, u.CreatedAt)
+	res, err := s.DB.Exec(`INSERT INTO users(username,password_hash,patron_id,role,created_at) VALUES(?,?,?,?,?)`,
+		u.Username, u.PasswordHash, u.PatronID, u.Role, u.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -43,19 +44,31 @@ func (s *Store) CreateUser(u *User) (int64, error) {
 
 // GetUserByUsername 按用户名取用户。
 func (s *Store) GetUserByUsername(username string) (*User, error) {
-	row := s.DB.QueryRow(`SELECT id,username,password_hash,patron_id,created_at FROM users WHERE username=?`, username)
+	row := s.DB.QueryRow(`SELECT id,username,password_hash,patron_id,role,created_at FROM users WHERE username=?`, username)
 	return scanUser(row)
 }
 
 // GetUserByID 按 ID 取用户。
 func (s *Store) GetUserByID(id int64) (*User, error) {
-	row := s.DB.QueryRow(`SELECT id,username,password_hash,patron_id,created_at FROM users WHERE id=?`, id)
+	row := s.DB.QueryRow(`SELECT id,username,password_hash,patron_id,role,created_at FROM users WHERE id=?`, id)
 	return scanUser(row)
+}
+
+// GetUserByPatronID 按读者 ID 找关联登录用户。
+func (s *Store) GetUserByPatronID(patronID int64) (*User, error) {
+	row := s.DB.QueryRow(`SELECT id,username,password_hash,patron_id,role,created_at FROM users WHERE patron_id=?`, patronID)
+	return scanUser(row)
+}
+
+// UpdateUserRole 更新用户角色（admin/user）。
+func (s *Store) UpdateUserRole(id int64, role string) error {
+	_, err := s.DB.Exec(`UPDATE users SET role=? WHERE id=?`, role, id)
+	return err
 }
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.PatronID, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.PatronID, &u.Role, &u.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &u, nil

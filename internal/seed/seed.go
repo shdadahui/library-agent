@@ -215,13 +215,17 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 
 	// 5. 演示登录账号（bcrypt 哈希，绑定演示读者）
 	demoAccounts := []struct {
-		username, password, patronName string
+		username, password, patronName, role string
 	}{
-		{"alice", "alice123", "张三"},
-		{"bob", "bob123", "李四"},
+		{"alice", "alice123", "张三", "user"},
+		{"bob", "bob123", "李四", "user"},
+		{"admin", "admin123", "王五", "admin"}, // 管理员（绑定王五）
 	}
 	for _, a := range demoAccounts {
-		if _, err := st.GetUserByUsername(a.username); err == nil {
+		if existing, err := st.GetUserByUsername(a.username); err == nil {
+			if existing.Role != a.role && a.role != "" {
+				_ = st.UpdateUserRole(existing.ID, a.role)
+			}
 			continue
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(a.password), bcrypt.DefaultCost)
@@ -233,7 +237,7 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 			continue
 		}
 		if _, err := st.CreateUser(&store.User{
-			Username: a.username, PasswordHash: string(hash), PatronID: pid, CreatedAt: store.NowDateTime(),
+			Username: a.username, PasswordHash: string(hash), PatronID: pid, Role: a.role, CreatedAt: store.NowDateTime(),
 		}); err != nil {
 			return nil, fmt.Errorf("创建演示账号失败: %w", err)
 		}

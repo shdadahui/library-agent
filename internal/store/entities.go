@@ -156,6 +156,27 @@ func (s *Store) CountBiblios() (int, error) {
 	return n, err
 }
 
+// ListBooks 全部书目（分页，管理员用）。
+func (s *Store) ListBooks(limit, offset int) ([]Biblio, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.DB.Query(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url FROM biblios ORDER BY id LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Biblio{}
+	for rows.Next() {
+		var b Biblio
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 // ---- 馆藏副本 ----
 
 // ListItems 列出某书目的全部副本。
