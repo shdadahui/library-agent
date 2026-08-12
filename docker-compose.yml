@@ -1,6 +1,6 @@
-# 图书馆 Agent 依赖：MySQL 8 + Redis 7
-# 启动: docker compose up -d
-# 说明: MySQL 映射到宿主机 3307（避免与本机 3306 冲突），Redis 6379
+# 图书馆 Agent 全栈：MySQL 8 + Redis 7 + App
+# 启动: docker compose up -d --build（首次构建镜像）
+# 本机直连: MySQL 映射 3307（避免与本机 3306 冲突），App 端口 8642
 services:
   mysql:
     image: mysql:8.0
@@ -28,6 +28,20 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+
+  app:
+    build: .
+    container_name: library-app
+    ports:
+      - "8642:8642"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    # 容器内使用 config.docker.json（DSN 指向服务名 mysql/redis）
 
 volumes:
   mysql-data:
