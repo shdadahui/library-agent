@@ -19,6 +19,7 @@ type Biblio struct {
 	Subjects    string `json:"subjects,omitempty"`
 	Lang        string `json:"lang"`
 	CoverID     int64  `json:"cover_id,omitempty"`
+	OnlineURL   string `json:"online_url,omitempty"` // 在线阅读地址（Gutendex 全文）
 }
 
 // Item 馆藏副本（实体书/条码）。
@@ -92,7 +93,7 @@ func (s *Store) SearchBooks(q, lang string, limit int) ([]Biblio, error) {
 	}
 	args = append(args, limit)
 	rows, err := s.DB.Query(`
-		SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id
+		SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url
 		FROM biblios WHERE `+strings.Join(clauses, " AND ")+`
 		ORDER BY id LIMIT ?`, args...)
 	if err != nil {
@@ -102,7 +103,7 @@ func (s *Store) SearchBooks(q, lang string, limit int) ([]Biblio, error) {
 	out := []Biblio{}
 	for rows.Next() {
 		var b Biblio
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID); err != nil {
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -112,9 +113,9 @@ func (s *Store) SearchBooks(q, lang string, limit int) ([]Biblio, error) {
 
 // GetBiblio 按 ID 取书目。
 func (s *Store) GetBiblio(id int64) (*Biblio, error) {
-	row := s.DB.QueryRow(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id FROM biblios WHERE id=?`, id)
+	row := s.DB.QueryRow(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url FROM biblios WHERE id=?`, id)
 	var b Biblio
-	if err := row.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID); err != nil {
+	if err := row.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL); err != nil {
 		return nil, err
 	}
 	return &b, nil
@@ -122,20 +123,26 @@ func (s *Store) GetBiblio(id int64) (*Biblio, error) {
 
 // GetBiblioByTitle 按书名取书目（seed 幂等用，LIMIT 1 兼容 MySQL 严格模式）。
 func (s *Store) GetBiblioByTitle(title string) (*Biblio, error) {
-	row := s.DB.QueryRow(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id FROM biblios WHERE title=? LIMIT 1`, title)
+	row := s.DB.QueryRow(`SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url FROM biblios WHERE title=? LIMIT 1`, title)
 	var b Biblio
-	if err := row.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID); err != nil {
+	if err := row.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL); err != nil {
 		return nil, err
 	}
 	return &b, nil
 }
 
+// UpdateBiblioOnlineURL 回填在线阅读地址（seed 幂等更新用）。
+func (s *Store) UpdateBiblioOnlineURL(id int64, url string) error {
+	_, err := s.DB.Exec(`UPDATE biblios SET online_url=? WHERE id=?`, url, id)
+	return err
+}
+
 // InsertBiblio 插入书目，返回新 ID。
 func (s *Store) InsertBiblio(b *Biblio) (int64, error) {
 	res, err := s.DB.Exec(`
-		INSERT INTO biblios(title,author,isbn,publisher,publish_year,subjects,lang,cover_id)
-		VALUES(?,?,?,?,?,?,?,?)`,
-		b.Title, b.Author, b.ISBN, b.Publisher, b.PublishYear, b.Subjects, b.Lang, b.CoverID)
+		INSERT INTO biblios(title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url)
+		VALUES(?,?,?,?,?,?,?,?,?)`,
+		b.Title, b.Author, b.ISBN, b.Publisher, b.PublishYear, b.Subjects, b.Lang, b.CoverID, b.OnlineURL)
 	if err != nil {
 		return 0, err
 	}

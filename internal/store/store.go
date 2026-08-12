@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS biblios(
   publish_year INTEGER NOT NULL DEFAULT 0,
   subjects VARCHAR(1024) NOT NULL DEFAULT '',
   lang VARCHAR(16) NOT NULL DEFAULT 'zh',
-  cover_id INTEGER NOT NULL DEFAULT 0
+  cover_id INTEGER NOT NULL DEFAULT 0,
+  online_url VARCHAR(512) NOT NULL DEFAULT ''
 );
 {isbnIdx}
 
@@ -195,6 +196,12 @@ func (s *Store) createSchema(t schemaTokens) error {
 				head = head[:80] + "…"
 			}
 			return fmt.Errorf("建表失败: %w（语句: %s）", err, head)
+		}
+	}
+	// 兼容旧库：补充新增列（忽略 duplicate column）
+	if _, err := s.DB.Exec(`ALTER TABLE biblios ADD COLUMN online_url VARCHAR(512) NOT NULL DEFAULT ''`); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return fmt.Errorf("迁移列失败: %w", err)
 		}
 	}
 	return nil

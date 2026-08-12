@@ -74,6 +74,72 @@ func (s *Service) RecommendForPatron(patronID int64, taste string, limit int) ([
 		interest[k] += 3
 	}
 
+	// 2.5 协同过滤 + 关联规则信号（基于全量借阅关系）
+	simScores := map[int64]int{} // biblioID → 相似读者加权分
+	coScores := map[int64]int{}  // biblioID → 与我借过的书共现次数
+	if records, err := s.st.AllReading(); err == nil {
+		byPatron := map[int64]map[int64]bool{}
+		for _, r := range records {
+			if byPatron[r.PatronID] == nil {
+				byPatron[r.PatronID] = map[int64]bool{}
+			}
+			byPatron[r.PatronID][r.BiblioID] = true
+		}
+		// 协同过滤：相似读者（借阅集合 Jaccard 相似度）借过而我没借的书
+		if len(borrowedSet) > 0 {
+			for pid, books := range byPatron {
+				if pid == patronID {
+					continue
+				}
+				inter, union := 0, len(borrowedSet)
+				for b := range books {
+					if borrowedSet[b] {
+						inter++
+					} else {
+						union++
+					}
+				}
+				if inter == 0 || union == 0 {
+					continue
+				}
+				jac := float64(inter) / float64(union)
+				if jac < 0.05 {
+					continue
+				}
+				for b := range books {
+					if !borrowedSet[b] {
+						simScores[b] += int(jac * 20)
+					}
+				}
+			}
+		}
+		// 关联规则：与我借过的书被同一位读者借过（共现）次数
+		myBooks := make([]int64, 0, len(borrowedSet))
+		for b := range borrowedSet {
+			myBooks = append(myBooks, b)
+		}
+		for pid, books := range byPatron {
+			if pid == patronID {
+				continue
+			}
+			shared := false
+			for _, mb := range myBooks {
+				if books[mb] {
+					shared = true
+					break
+				}
+			}
+			if !shared {
+				continue
+			}
+			for b := range books {
+				if !borrowedSet[b] {
+					coScores[b]++
+				}
+			}
+		}
+	}
+
 	// 3. 候选书目（全库，排除已借）
 	books, err := s.st.SearchBooks("", "", 1000)
 	if err != nil {
@@ -97,6 +163,15 @@ func (s *Service) RecommendForPatron(patronID int64, taste string, limit int) ([
 		if b.Author != "" && interest[b.Author] > 0 {
 			score += interest[b.Author] * 2
 			why = append(why, "作者 "+b.Author)
+		}
+		// 协同过滤 / 关联规则加分
+		if simScores[b.ID] > 0 {
+			score += simScores[b.ID] * 2
+			why = append(why, "相似读者也读过")
+		}
+		if coScores[b.ID] > 0 {
+			score += coScores[b.ID]
+			why = append(why, "与您借过的书相关")
 		}
 		// 可借加分（推荐可借的书）
 		items, _ := s.st.ListItems(b.ID)

@@ -36,6 +36,7 @@ type SeedBook struct {
 	Subjects  string
 	Lang      string
 	CoverID   int64
+	OnlineURL string
 }
 
 // Result 种子初始化统计。
@@ -64,16 +65,19 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 		}
 	}
 
-	// 1. 书目 + 馆藏副本（按书名幂等：已存在则跳过，支持安全重试）
+	// 1. 书目 + 馆藏副本（按书名幂等：已存在则跳过/回填 URL，支持安全重试）
 	idByTitle := map[string]int64{}
 	for _, b := range books {
 		if existing, err := st.GetBiblioByTitle(b.Title); err == nil {
 			idByTitle[b.Title] = existing.ID
+			if existing.OnlineURL == "" && b.OnlineURL != "" {
+				_ = st.UpdateBiblioOnlineURL(existing.ID, b.OnlineURL) // 回填在线阅读地址
+			}
 			continue
 		}
 		id, err := st.InsertBiblio(&store.Biblio{
 			Title: b.Title, Author: b.Author, ISBN: b.ISBN, Publisher: b.Publisher,
-			PublishYear: b.Year, Subjects: b.Subjects, Lang: b.Lang, CoverID: b.CoverID,
+			PublishYear: b.Year, Subjects: b.Subjects, Lang: b.Lang, CoverID: b.CoverID, OnlineURL: b.OnlineURL,
 		})
 		if err != nil {
 			log.Printf("跳过 %s: %v", b.Title, err)
@@ -167,6 +171,12 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 	patronIDs := []int64{idByPatron["张三"], idByPatron["李四"], idByPatron["王五"], idByPatron["赵六"], idByPatron["钱七"], idByPatron["孙八"]}
 	if len(allItems) > 0 {
 		for _, pid := range patronIDs {
+			// 幂等：该读者已有历史记录则跳过（避免重复 seed 累加）
+			var cnt int
+			_ = st.DB.QueryRow(`SELECT COUNT(*) FROM loans WHERE patron_id=? AND status='returned'`, pid).Scan(&cnt)
+			if cnt > 0 {
+				continue
+			}
 			seen := map[int64]bool{}
 			n := 10 + rng.Intn(8) // 10~17 条历史
 			for i := 0; i < n; i++ {
@@ -178,6 +188,27 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 				checkout := day(-60 - rng.Intn(340))
 				due := addDayOffset(checkout, 14)
 				seedLoan(st, it.ID, pid, checkout, due, rng.Intn(3), "returned")
+			}
+		}
+		// 虚拟读者（150 位）：为协同过滤/关联规则推荐提供共现数据
+		for i := 1; i <= 150; i++ {
+			vname := fmt.Sprintf("读者%03d", i)
+			vbarcode := fmt.Sprintf("V%03d", i)
+			vpid, err := st.InsertPatron(&store.Patron{Name: vname, Barcode: vbarcode})
+			if err != nil {
+				continue // 幂等：已存在则跳过
+			}
+			vseen := map[int64]bool{}
+			vn := 5 + rng.Intn(11) // 5~15 本
+			for j := 0; j < vn; j++ {
+				it := allItems[rng.Intn(len(allItems))]
+				if vseen[it.ID] {
+					continue
+				}
+				vseen[it.ID] = true
+				checkout := day(-30 - rng.Intn(200))
+				due := addDayOffset(checkout, 14)
+				seedLoan(st, it.ID, vpid, checkout, due, 0, "returned")
 			}
 		}
 	}
@@ -212,15 +243,19 @@ func Seed(st *store.Store, fetch bool, fetchRows int) (*Result, error) {
 }
 
 // seedLoan 直接写入借阅记录并置副本为 borrowed（用于预置场景，绕过业务规则）。
+// returned 记录默认按时归还（checkin_date = due_date），避免误判逾期。
 func seedLoan(st *store.Store, itemID, patronID int64, checkout, due string, renewals int, status string) {
 	if itemID == 0 {
 		return
 	}
-	q := `INSERT INTO loans(item_id,patron_id,checkout_date,due_date,renewals,status) VALUES(?,?,?,?,?,?)`
-	_, _ = st.DB.Exec(q, itemID, patronID, checkout, due, renewals, status)
-	if status == "active" {
-		_ = st.UpdateItemStatus(itemID, "borrowed")
+	if status == "returned" {
+		_, _ = st.DB.Exec(`INSERT INTO loans(item_id,patron_id,checkout_date,due_date,checkin_date,renewals,status) VALUES(?,?,?,?,?,?,'returned')`,
+			itemID, patronID, checkout, due, due, renewals)
+		return
 	}
+	_, _ = st.DB.Exec(`INSERT INTO loans(item_id,patron_id,checkout_date,due_date,renewals,status) VALUES(?,?,?,?,?,'active')`,
+		itemID, patronID, checkout, due, renewals)
+	_ = st.UpdateItemStatus(itemID, "borrowed")
 }
 
 // fetchOpenLibrary 从 Open Library Search API 拉取书目（多主题覆盖）。
@@ -311,9 +346,11 @@ func fetchGutendex(limit int) []SeedBook {
 		Name string `json:"name"`
 	}
 	type book struct {
-		Title    string   `json:"title"`
-		Authors  []author `json:"authors"`
-		Subjects []string `json:"subjects"`
+		ID       int               `json:"id"`
+		Title    string            `json:"title"`
+		Authors  []author          `json:"authors"`
+		Subjects []string          `json:"subjects"`
+		Formats  map[string]string `json:"formats"`
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
 	seen := map[string]bool{}
@@ -358,8 +395,16 @@ func fetchGutendex(limit int) []SeedBook {
 				}
 				subj = strings.Join(b.Subjects[:n], "，")
 			}
+			// 在线阅读地址：优先纯文本格式，其次合成 Project Gutenberg 页面
+			onlineURL := ""
+			if u, ok := b.Formats["text/plain"]; ok {
+				onlineURL = u
+			} else if b.ID > 0 {
+				onlineURL = fmt.Sprintf("https://www.gutenberg.org/ebooks/%d", b.ID)
+			}
 			out = append(out, SeedBook{
 				Title: b.Title, Author: authorName, Subjects: subj, Lang: "en",
+				OnlineURL: onlineURL,
 			})
 		}
 		time.Sleep(100 * time.Millisecond)

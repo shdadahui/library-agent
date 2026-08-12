@@ -123,7 +123,10 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 	return finalText.String(), nil
 }
 
-// executeTool 执行单个工具调用并推送事件，返回 JSON 字符串结果。
+// maxToolResultLen 回传 LLM 的工具结果最大长度（超长截断，控制上下文 token）。
+const maxToolResultLen = 2000
+
+// executeTool 执行单个工具调用并推送事件，返回 JSON 字符串结果（超长截断）。
 func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCall, emit func(Event)) string {
 	def := FindTool(l.Tools, tc.Function.Name)
 	emit(Event{Type: "tool_call", Data: map[string]any{
@@ -151,8 +154,31 @@ func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCal
 		return jsonMsg(map[string]any{"error": msg})
 	}
 	out := jsonMsg(result)
+	if len(out) > maxToolResultLen {
+		out = out[:maxToolResultLen] + "\n…(结果过长已截断，共 " + itoaSafe(len(out)) + " 字符)"
+	}
 	emit(Event{Type: "tool_result", Data: map[string]any{"id": tc.ID, "name": tc.Function.Name, "result": result}})
 	return out
+}
+
+// itoaSafe 整数转字符串（工具结果截断提示用）。
+func itoaSafe(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	neg := n < 0
+	if neg {
+		n = -n
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	if neg {
+		b = append([]byte{'-'}, b...)
+	}
+	return string(b)
 }
 
 // buildSystemPrompt 构造系统提示词（含当前读者身份）。

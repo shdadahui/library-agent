@@ -2,9 +2,34 @@ package api
 
 import (
 	"net/http"
+	"strings"
+	"unicode"
 
 	"github.com/shdadahui/library-agent/internal/auth"
 )
+
+// checkPasswordStrength 密码强度校验：至少 6 位且包含字母与数字。
+func checkPasswordStrength(pw string) string {
+	if len(pw) < 6 {
+		return "密码至少 6 位"
+	}
+	hasLetter, hasDigit := false, false
+	for _, c := range pw {
+		if unicode.IsLetter(c) {
+			hasLetter = true
+		}
+		if unicode.IsDigit(c) {
+			hasDigit = true
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return "密码需同时包含字母和数字"
+	}
+	if strings.ContainsAny(pw, " \t") {
+		return "密码不能包含空格"
+	}
+	return ""
+}
 
 // RegisterRequest 注册请求。
 type RegisterRequest struct {
@@ -25,8 +50,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if len(body.Username) < 2 || len(body.Password) < 4 {
-		writeErr(w, http.StatusBadRequest, "用户名至少 2 个字符，密码至少 4 位")
+	if len(body.Username) < 2 {
+		writeErr(w, http.StatusBadRequest, "用户名至少 2 个字符")
+		return
+	}
+	if msg := checkPasswordStrength(body.Password); msg != "" {
+		writeErr(w, http.StatusBadRequest, msg)
 		return
 	}
 	if body.Name == "" {

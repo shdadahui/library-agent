@@ -17,7 +17,7 @@ func (s *Store) TopBorrowed(limit int) ([]struct {
 	BorrowCount int `json:"borrow_count"`
 }, error) {
 	rows, err := s.DB.Query(`
-		SELECT b.id, b.title, b.author, b.isbn, b.publisher, b.publish_year, b.subjects, b.lang, b.cover_id, COUNT(l.id) AS cnt
+		SELECT b.id, b.title, b.author, b.isbn, b.publisher, b.publish_year, b.subjects, b.lang, b.cover_id, b.online_url, COUNT(l.id) AS cnt
 		FROM loans l
 		JOIN items i ON l.item_id = i.id
 		JOIN biblios b ON i.biblio_id = b.id
@@ -35,13 +35,39 @@ func (s *Store) TopBorrowed(limit int) ([]struct {
 	for rows.Next() {
 		var b Biblio
 		var cnt int
-		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &cnt); err != nil {
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL, &cnt); err != nil {
 			return nil, err
 		}
 		out = append(out, struct {
 			Biblio
 			BorrowCount int `json:"borrow_count"`
 		}{Biblio: b, BorrowCount: cnt})
+	}
+	return out, rows.Err()
+}
+
+// ReadingRecord 读者-书目借阅关系（协同过滤/关联规则用）。
+type ReadingRecord struct {
+	PatronID int64
+	BiblioID int64
+}
+
+// AllReading 全量借阅关系（去重）。
+func (s *Store) AllReading() ([]ReadingRecord, error) {
+	rows, err := s.DB.Query(`
+		SELECT DISTINCT l.patron_id, i.biblio_id
+		FROM loans l JOIN items i ON l.item_id = i.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ReadingRecord{}
+	for rows.Next() {
+		var r ReadingRecord
+		if err := rows.Scan(&r.PatronID, &r.BiblioID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }
@@ -67,4 +93,24 @@ func (s *Store) LibraryStats() (*LibraryStats, error) {
 		}
 	}
 	return st, nil
+}
+
+// NewBooks 最近上架书目（新书通报）。
+func (s *Store) NewBooks(limit int) ([]Biblio, error) {
+	rows, err := s.DB.Query(`
+		SELECT id,title,author,isbn,publisher,publish_year,subjects,lang,cover_id,online_url
+		FROM biblios ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Biblio{}
+	for rows.Next() {
+		var b Biblio
+		if err := rows.Scan(&b.ID, &b.Title, &b.Author, &b.ISBN, &b.Publisher, &b.PublishYear, &b.Subjects, &b.Lang, &b.CoverID, &b.OnlineURL); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }

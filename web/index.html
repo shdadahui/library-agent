@@ -82,6 +82,50 @@
     border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px;
   }
   #sidebar .me .logout:hover { color: var(--err); border-color: var(--err); }
+  #sidebar .me .report {
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px;
+  }
+  #sidebar .me .report:hover { color: var(--primary); border-color: var(--primary); }
+
+  /* 阅读报告弹层 */
+  #reportModal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    z-index: 50; align-items: center; justify-content: center;
+  }
+  #reportModal.on { display: flex; }
+  #reportModal .box {
+    width: 520px; max-width: 92vw; max-height: 84vh; overflow-y: auto;
+    background: var(--panel); border-radius: 14px; padding: 24px;
+  }
+  #reportModal .box h2 { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
+  #reportModal .box .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
+  #reportModal .close {
+    float: right; border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted);
+  }
+  .rp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .rp-card {
+    background: var(--tool-bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center;
+  }
+  .rp-card .n { font-size: 22px; font-weight: 500; color: var(--primary); }
+  .rp-card .l { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .rp-sec { margin-bottom: 14px; }
+  .rp-sec h3 { font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--muted); }
+  .rp-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12.5px; }
+  .rp-bar-row .nm { width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-bar-row .bar { flex: 1; height: 8px; background: var(--tool-bg); border-radius: 4px; overflow: hidden; }
+  .rp-bar-row .bar i { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
+  .rp-bar-row .ct { width: 34px; text-align: right; color: var(--muted); }
+
+  /* 热门图书（空态） */
+  .hotbox { margin-top: 22px; text-align: left; max-width: 520px; margin-left: auto; margin-right: auto; }
+  .hotbox h3 { font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
+  .hotbox .item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-radius: 8px; cursor: pointer; font-size: 13.5px;
+  }
+  .hotbox .item:hover { background: var(--tool-bg); }
+  .hotbox .item .cnt { color: var(--muted); font-size: 12px; }
 
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #main header {
@@ -201,6 +245,7 @@
     <div id="convList"></div>
     <div class="me">
       <span class="name" id="meName"></span>
+      <button class="report" id="reportBtn" title="我的阅读报告">📊</button>
       <button class="logout" id="logout">退出</button>
     </div>
   </aside>
@@ -232,6 +277,15 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+<div id="reportModal"><div class="box">
+  <button class="close" id="reportClose">✕</button>
+  <h2 id="rpTitle">我的阅读报告</h2>
+  <div class="sub" id="rpSub"></div>
+  <div class="rp-grid" id="rpGrid"></div>
+  <div class="rp-sec"><h3>最爱作者</h3><div id="rpAuthors"></div></div>
+  <div class="rp-sec"><h3>阅读主题</h3><div id="rpSubjects"></div></div>
+  <div class="rp-sec"><h3>近 6 个月借阅趋势</h3><div id="rpTrend"></div></div>
+</div></div>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
@@ -324,6 +378,7 @@ async function initApp() {
     showApp();
     loadConversations();
     loadSuggestions();
+    loadHotBooks();
     const h = await fetch("/api/health").then(r => r.json());
     $("#providerBadge").textContent = "LLM: " + (h.provider || "mock") + (h.provider === "mock" ? " · 演示模式" : "");
     input.focus();
@@ -331,6 +386,58 @@ async function initApp() {
     showAuth();
   }
 }
+
+/* ---------- 热门图书（空态展示） ---------- */
+async function loadHotBooks() {
+  try {
+    const hot = await api("/api/books/hot?limit=8");
+    const tip = chat.querySelector(".empty-tip");
+    if (!tip) return;
+    const box = document.createElement("div");
+    box.className = "hotbox";
+    box.innerHTML = "<h3>🔥 热门借阅</h3>";
+    hot.forEach(b => {
+      const el = document.createElement("div");
+      el.className = "item";
+      el.innerHTML = `<span>《${b.title}》 ${b.author}</span><span class="cnt">${b.reasons && b.reasons[0] || ""}</span>`;
+      el.onclick = () => { input.value = "帮我查一下《" + b.title + "》"; send(); };
+      box.appendChild(el);
+    });
+    tip.appendChild(box);
+  } catch (e) {}
+}
+
+/* ---------- 阅读报告 ---------- */
+$("#reportBtn").onclick = async () => {
+  try {
+    const r = await api("/api/me/report");
+    $("#rpTitle").textContent = r.patron_name + " 的阅读报告";
+    $("#rpSub").textContent = "累计借阅 " + r.total_borrows + " 次 · 读过 " + r.unique_books + " 本 · 当前在借 " + r.active_loans + " 本";
+    $("#rpGrid").innerHTML = `
+      <div class="rp-card"><div class="n">${r.total_borrows}</div><div class="l">累计借阅</div></div>
+      <div class="rp-card"><div class="n">${r.unique_books}</div><div class="l">读过的书</div></div>
+      <div class="rp-card"><div class="n">${r.overdue_count}</div><div class="l">逾期次数</div></div>`;
+    renderBars($("#rpAuthors"), r.top_authors, "作者");
+    renderBars($("#rpSubjects"), r.top_subjects, "主题");
+    renderBars($("#rpTrend"), r.monthly_trend, "趋势");
+    $("#reportModal").classList.add("on");
+  } catch (e) { alert("加载报告失败: " + e.message); }
+};
+function renderBars(el, items, kind) {
+  el.innerHTML = "";
+  if (!items || !items.length) { el.innerHTML = '<span style="color:var(--muted);font-size:12.5px">暂无数据</span>'; return; }
+  const max = Math.max(...items.map(i => i.count));
+  items.forEach(i => {
+    const row = document.createElement("div");
+    row.className = "rp-bar-row";
+    const w = max ? Math.round(i.count / max * 100) : 0;
+    row.innerHTML = `<span class="nm">${kind === "趋势" ? i.month : i.name}</span>
+      <span class="bar"><i style="width:${w}%"></i></span><span class="ct">${i.count}</span>`;
+    el.appendChild(row);
+  });
+}
+$("#reportClose").onclick = () => $("#reportModal").classList.remove("on");
+$("#reportModal").onclick = e => { if (e.target.id === "reportModal") $("#reportModal").classList.remove("on"); };
 
 /* ---------- 会话列表 ---------- */
 async function loadConversations() {
@@ -364,6 +471,7 @@ function newConversation() {
   tip.className = "empty-tip";
   tip.innerHTML = `<span class="big">📚</span>开始新会话吧！`;
   chat.appendChild(tip);
+  loadHotBooks();
   loadConversations();
   input.focus();
 }
@@ -479,6 +587,20 @@ async function send() {
               card.querySelector(".result-summary").textContent = "⚠️ " + data.error;
             } else {
               card.querySelector(".result-summary").textContent = summarize(data.result);
+              // 在线阅读链接（结果含 online_url 时）
+              const links = extractOnlineLinks(data.result);
+              if (links.length) {
+                const box = document.createElement("div");
+                box.style.marginTop = "8px";
+                links.slice(0, 3).forEach(l => {
+                  const a = document.createElement("a");
+                  a.href = l.url; a.target = "_blank"; a.rel = "noopener";
+                  a.textContent = "🔗 在线阅读《" + l.title + "》";
+                  a.style.cssText = "display:block;color:var(--primary);font-size:12.5px;text-decoration:none;margin-top:3px";
+                  box.appendChild(a);
+                });
+                card.appendChild(box);
+              }
             }
             card.querySelector(".result-summary").title = prettyJSON(data.result);
           }
@@ -549,6 +671,23 @@ function summarize(result) {
     if (v.available_items) return `可借副本 ${v.available_items.length} 本，请到馆借阅`;
     return prettyJSON(v);
   } catch { return prettyJSON(result); }
+}
+function extractOnlineLinks(result) {
+  const links = [];
+  try {
+    const v = typeof result === "string" ? JSON.parse(result) : result;
+    const walk = o => {
+      if (Array.isArray(o)) o.forEach(walk);
+      else if (o && typeof o === "object") {
+        if (typeof o.online_url === "string" && o.online_url) {
+          links.push({ title: o.title || "这本书", url: o.online_url });
+        }
+        Object.values(o).forEach(walk);
+      }
+    };
+    walk(v);
+  } catch (e) {}
+  return links;
 }
 
 input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });

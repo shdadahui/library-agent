@@ -63,7 +63,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	cid := *conversationID
 
-	// 历史上下文（仅 user/assistant 文本，最近 N 条）
+	// 历史上下文（仅 user/assistant 文本，最近 N 条；超长时压缩早期消息）
 	history := []agent.Message{}
 	if msgs, err := s.Svc.ListMessages(cid); err == nil {
 		from := 0
@@ -72,6 +72,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, m := range msgs[from:] {
 			history = append(history, agent.Message{Role: m.Role, Content: m.Content})
+		}
+		// 若历史总量超限（含被裁掉的部分），压缩早期消息为摘要
+		if len(msgs) > maxContextMessages*2 {
+			history = agent.SummarizeHistory(history, maxContextMessages)
 		}
 	}
 
