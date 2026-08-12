@@ -1,17 +1,4 @@
-// 种子数据定义：内置书单（离线可用）+ Open Library API 扩充。
-package main
-
-// SeedBook 种子书目。
-type SeedBook struct {
-	Title    string
-	Author   string
-	ISBN     string
-	Publisher string
-	Year     int
-	Subjects string
-	Lang     string
-	CoverID  int64
-}
+package seed
 
 // builtinBooks 内置演示书单：中文经典 + 数学 + 英文经典。
 // 包含《三体》《活着》《百年孤独》等演示命中书名，离线即可运行。
