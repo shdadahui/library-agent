@@ -72,6 +72,21 @@ go run ./cmd/seed -reset # 重建数据库
 go run ./cmd/server -addr :8080
 ```
 
+## 评测集（Agent Eval）
+
+`data/eval/cases.json` 定义了 18 个评测用例，覆盖 6 类场景：检索、借阅、续借、罚款、预约、边界（闲聊/超范围/信息不足/查无此书）。判定依据：**期望工具调用序列**（exact=严格相等 / contains=子序列）+ 关键参数断言（如 `search_books.q` 需包含书名）。
+
+```bash
+go run ./cmd/eval -mock          # mock 模式（确定性，校验评测集与引擎对齐）
+go run ./cmd/eval                # 真实 LLM 评测（config.json 指定供应商）
+go run ./cmd/eval -only renew-01 # 只跑单个用例
+```
+
+- 每个用例使用**独立内存数据库**（种子数据预置），互不污染、可重复执行
+- 输出逐用例 PASS/FAIL + 工具序列对比，报告保存到 `data/eval/report-<时间戳>.json`
+- 退出码：0 全部通过；1 存在失败用例（可接入 CI）
+- 评测驱动开发：新增能力 → 先补用例 → 再迭代实现
+
 ## API 一览
 
 | 端点 | 说明 |
@@ -91,8 +106,9 @@ go run ./cmd/server -addr :8080
 ```
 cmd/server    服务入口            internal/config  LLM 多供应商配置
 cmd/seed      种子数据工具         internal/store   SQLite 数据访问
+cmd/eval      Agent 评测执行器     internal/seed    种子数据（供 seed/eval 复用）
 web/          前端单页             internal/service 流通业务规则
-                                 internal/agent    LLM 客户端 + tool calling
+data/eval/    评测集与报告         internal/agent    LLM 客户端 + tool calling
                                  internal/api      REST + SSE
 ```
 

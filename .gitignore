@@ -26,3 +26,6 @@ Thumbs.db
 
 # 工作区数据
 .workbuddy/
+
+data/eval/report-*.json
+data/*.log
