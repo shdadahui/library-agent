@@ -145,6 +145,29 @@ go run ./cmd/eval -only multi-01 # 只跑单个用例
 - **监控**：`GET /api/metrics` 含对话/token 用量/工具调用/限流计数；对话日志 `data/logs/chat-*.jsonl`
 - **安全**：chat 端点每用户 30 次/分钟限流（Redis）；LLM 输出经 DOMPurify 清洗；工具参数按 schema 校验
 
+
+## 公网部署（让别人也能访问）
+
+推荐：云轻量服务器（阿里云/腾讯云，¥25-50/月）+ Docker Compose 一键部署，国内访问快。
+
+**一键部署**（VPS 上执行）：
+
+```bash
+curl -sL https://raw.githubusercontent.com/shdadahui/library-agent/main/scripts/deploy.sh | bash
+# 或手动：
+git clone https://github.com/shdadahui/library-agent.git && cd library-agent
+echo "DEEPSEEK_API_KEY=你的key" >> .env
+docker compose up -d --build
+```
+
+**部署结构**：`nginx(80)` → `app(:8642, 自动 seed)` → `mysql` + `redis`（四容器，compose 编排）
+
+**首次启动自动完成**：建库建表 → 导入 2000+ 书目与演示数据 → 启动服务（幂等，可安全重启）。
+
+访问 `http://<服务器公网IP>` 即可使用，演示账号 `alice/alice123`、`bob/bob123`、`admin/admin123`。
+
+> 注意：云安全组需放行 80/443 端口；`DEEPSEEK_API_KEY` 通过 `.env` 注入（勿提交仓库）。
+
 ## 监控与日志
 
 - `GET /api/metrics`：运行时统计（对话数、各工具调用次数、LLM/工具错误数、平均延迟、运行时长）
