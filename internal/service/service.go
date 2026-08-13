@@ -12,27 +12,27 @@ import (
 
 // 业务规则常量。
 const (
-	MaxActiveLoans   = 5  // 读者同时最多在借 5 本
-	MaxRenewals      = 2  // 每本书最多续借 2 次
-	FinePerDayCents  = 10 // 逾期罚款 0.1 元/天（10 分）
-	DefaultLoanDays  = 14 // 默认借期 14 天
-	DateLayout       = "2006-01-02"
+	MaxActiveLoans  = 5  // 读者同时最多在借 5 本
+	MaxRenewals     = 2  // 每本书最多续借 2 次
+	FinePerDayCents = 10 // 逾期罚款 0.1 元/天（10 分）
+	DefaultLoanDays = 14 // 默认借期 14 天
+	DateLayout      = "2006-01-02"
 )
 
 // 业务错误（对外直接展示中文消息）。
 var (
-	ErrPatronNotFound  = errors.New("读者不存在")
-	ErrItemNotFound    = errors.New("馆藏副本不存在")
-	ErrBiblioNotFound  = errors.New("书目不存在")
-	ErrLoanNotFound    = errors.New("借阅记录不存在")
-	ErrItemUnavailable = errors.New("该副本当前不可借出")
+	ErrPatronNotFound   = errors.New("读者不存在")
+	ErrItemNotFound     = errors.New("馆藏副本不存在")
+	ErrBiblioNotFound   = errors.New("书目不存在")
+	ErrLoanNotFound     = errors.New("借阅记录不存在")
+	ErrItemUnavailable  = errors.New("该副本当前不可借出")
 	ErrLoanLimitReached = errors.New("同时最多借 5 本，请先归还部分图书")
-	ErrOverdue         = errors.New("您有逾期未还的图书，请先归还")
-	ErrMaxRenewals     = errors.New("每本书最多续借 2 次")
-	ErrHoldPending     = errors.New("该书有读者预约排队，无法续借")
-	ErrLoanNotActive   = errors.New("该借阅记录已关闭")
-	ErrAlreadyHeld     = errors.New("您已预约过这本书")
-	ErrNoAvailableItem = errors.New("该书全部副本已借出，无法直接借阅，可为您预约")
+	ErrOverdue          = errors.New("您有逾期未还的图书，请先归还")
+	ErrMaxRenewals      = errors.New("每本书最多续借 2 次")
+	ErrHoldPending      = errors.New("该书有读者预约排队，无法续借")
+	ErrLoanNotActive    = errors.New("该借阅记录已关闭")
+	ErrAlreadyHeld      = errors.New("您已预约过这本书")
+	ErrNoAvailableItem  = errors.New("该书全部副本已借出，无法直接借阅，可为您预约")
 )
 
 // Service 图书馆业务服务。

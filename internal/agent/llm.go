@@ -17,11 +17,11 @@ import (
 
 // Message 对话消息（OpenAI 兼容）。
 type Message struct {
-	Role       string      `json:"role"` // system / user / assistant / tool
-	Content    string      `json:"content,omitempty"`
-	ToolCalls  []ToolCall  `json:"tool_calls,omitempty"`
-	ToolCallID string      `json:"tool_call_id,omitempty"`
-	Name       string      `json:"name,omitempty"`
+	Role       string     `json:"role"` // system / user / assistant / tool
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+	Name       string     `json:"name,omitempty"`
 }
 
 // ToolCall 工具调用（由助手消息携带）。

@@ -21,15 +21,15 @@ type MonthlyStat struct {
 
 // ReadingReport 个人阅读报告。
 type ReadingReport struct {
-	PatronName       string       `json:"patron_name"`
-	TotalBorrows     int          `json:"total_borrows"`      // 累计借阅
-	UniqueBooks      int          `json:"unique_books"`       // 读过不同书
-	ActiveLoans      int          `json:"active_loans"`       // 当前在借
-	OverdueCount     int          `json:"overdue_count"`      // 历史逾期次数
-	UnpaidFinesYuan  float64      `json:"unpaid_fines_yuan"`  // 未缴罚款
-	TopAuthors       []CountItem  `json:"top_authors"`
-	TopSubjects      []CountItem  `json:"top_subjects"`
-	MonthlyTrend     []MonthlyStat `json:"monthly_trend"` // 最近 6 个月
+	PatronName      string        `json:"patron_name"`
+	TotalBorrows    int           `json:"total_borrows"`     // 累计借阅
+	UniqueBooks     int           `json:"unique_books"`      // 读过不同书
+	ActiveLoans     int           `json:"active_loans"`      // 当前在借
+	OverdueCount    int           `json:"overdue_count"`     // 历史逾期次数
+	UnpaidFinesYuan float64       `json:"unpaid_fines_yuan"` // 未缴罚款
+	TopAuthors      []CountItem   `json:"top_authors"`
+	TopSubjects     []CountItem   `json:"top_subjects"`
+	MonthlyTrend    []MonthlyStat `json:"monthly_trend"` // 最近 6 个月
 }
 
 // ReadingReport 基于借阅历史生成个人阅读报告。

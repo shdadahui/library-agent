@@ -8,19 +8,19 @@ import (
 
 // 门禁错误。
 var (
-	ErrGateAlreadyIn  = errors.New("您已在馆内，请勿重复扫码")
-	ErrGateNotIn      = errors.New("您当前不在馆内，请先入馆")
-	ErrGateDirection  = errors.New("无效的通行方向（in/out）")
+	ErrGateAlreadyIn = errors.New("您已在馆内，请勿重复扫码")
+	ErrGateNotIn     = errors.New("您当前不在馆内，请先入馆")
+	ErrGateDirection = errors.New("无效的通行方向（in/out）")
 )
 
 // GateScanResult 扫码通行结果。
 type GateScanResult struct {
-	ID        int64  `json:"id"`
-	Patron    string `json:"patron"`
-	Direction string `json:"direction"` // in / out
-	Gate      string `json:"gate"`
-	Time      string `json:"time"`
-	InLibrary int    `json:"in_library"`          // 通行后当前在馆人数
+	ID        int64    `json:"id"`
+	Patron    string   `json:"patron"`
+	Direction string   `json:"direction"` // in / out
+	Gate      string   `json:"gate"`
+	Time      string   `json:"time"`
+	InLibrary int      `json:"in_library"`         // 通行后当前在馆人数
 	Warnings  []string `json:"warnings,omitempty"` // 逾期/罚款提示（不拦截通行）
 }
 

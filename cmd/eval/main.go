@@ -1,9 +1,10 @@
 // 评测执行器：基于 data/eval/cases.json 的评测集，驱动 Agent 并校验工具调用序列。
 //
 // 用法:
-//   go run ./cmd/eval -mock                 # mock 模式（确定性，验证评测集与 harness）
-//   go run ./cmd/eval                       # 真实 LLM（config.json 指定供应商）
-//   go run ./cmd/eval -only renew-01        # 只跑单个用例
+//
+//	go run ./cmd/eval -mock                 # mock 模式（确定性，验证评测集与 harness）
+//	go run ./cmd/eval                       # 真实 LLM（config.json 指定供应商）
+//	go run ./cmd/eval -only renew-01        # 只跑单个用例
 //
 // 每个用例使用独立内存数据库（种子数据预置），互不污染、可重复执行。
 // 退出码：0 全部通过；1 存在失败用例。
@@ -47,7 +48,7 @@ type EvalCase struct {
 	Input         string       `json:"input"`
 	History       []HistoryMsg `json:"history,omitempty"`
 	ExpectedTools []string     `json:"expected_tools"`
-	ToolOrder     string       `json:"tool_order"`        // exact / contains（默认 contains）
+	ToolOrder     string       `json:"tool_order"`             // exact / contains（默认 contains）
 	AcceptTools   []string     `json:"accept_tools,omitempty"` // 白名单：实际工具都须在其中（空序列亦通过），用于路径无关断言
 	ExpectText    []string     `json:"expect_text,omitempty"`  // 最终回复须包含的子串（验证行为结果）
 	CheckArgs     []ArgCheck   `json:"check_args"`
@@ -63,22 +64,22 @@ type Suite struct {
 
 // CaseResult 单个用例结果。
 type CaseResult struct {
-	ID           string   `json:"id"`
-	Category     string   `json:"category"`
-	Input        string   `json:"input"`
-	Pass         bool     `json:"pass"`
-	Reason       string   `json:"reason"`
-	ActualTools  []string `json:"actual_tools"`
-	FinalText    string   `json:"final_text,omitempty"`
-	LatencySec   float64  `json:"latency_sec"`
+	ID          string   `json:"id"`
+	Category    string   `json:"category"`
+	Input       string   `json:"input"`
+	Pass        bool     `json:"pass"`
+	Reason      string   `json:"reason"`
+	ActualTools []string `json:"actual_tools"`
+	FinalText   string   `json:"final_text,omitempty"`
+	LatencySec  float64  `json:"latency_sec"`
 }
 
 // collector 事件收集器。
 type collector struct {
-	tools     []string
+	tools      []string
 	argsByName map[string][]string
-	text      strings.Builder
-	errMsg    string
+	text       strings.Builder
+	errMsg     string
 }
 
 func (c *collector) emit(ev agent.Event) {
@@ -144,7 +145,7 @@ func main() {
 	}
 	if cfg == nil {
 		cfg = &config.Config{
-			Providers: map[string]config.Provider{"mock": {DefaultModel: "mock"}},
+			Providers:      map[string]config.Provider{"mock": {DefaultModel: "mock"}},
 			ActiveProvider: "mock", Temperature: 0.7, MaxIterations: 8,
 		}
 	}

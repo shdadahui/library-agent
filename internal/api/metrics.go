@@ -12,16 +12,16 @@ import (
 
 // Metrics 运行时统计（监控端点 /api/metrics 输出）。
 type Metrics struct {
-	mu                sync.Mutex
-	Chats             int            `json:"chats"`              // 完成的对话轮次
-	ToolCalls         map[string]int `json:"tool_calls"`         // 各工具调用次数
-	ToolErrors        int            `json:"tool_errors"`        // 工具执行失败次数
-	LLMErrors         int            `json:"llm_errors"`         // LLM 请求失败次数
-	TotalLatencyMs    int64          `json:"total_latency_ms"`   // 对话累计耗时
-	PromptTokens      int64          `json:"prompt_tokens"`      // 累计输入 token（成本可见）
-	CompletionTokens  int64          `json:"completion_tokens"`  // 累计输出 token
-	RateLimitedReqs   int            `json:"rate_limited_reqs"`  // 被限流的请求数
-	StartTime         time.Time      `json:"-"`
+	mu               sync.Mutex
+	Chats            int            `json:"chats"`             // 完成的对话轮次
+	ToolCalls        map[string]int `json:"tool_calls"`        // 各工具调用次数
+	ToolErrors       int            `json:"tool_errors"`       // 工具执行失败次数
+	LLMErrors        int            `json:"llm_errors"`        // LLM 请求失败次数
+	TotalLatencyMs   int64          `json:"total_latency_ms"`  // 对话累计耗时
+	PromptTokens     int64          `json:"prompt_tokens"`     // 累计输入 token（成本可见）
+	CompletionTokens int64          `json:"completion_tokens"` // 累计输出 token
+	RateLimitedReqs  int            `json:"rate_limited_reqs"` // 被限流的请求数
+	StartTime        time.Time      `json:"-"`
 }
 
 // NewMetrics 创建统计器。
@@ -29,12 +29,12 @@ func NewMetrics() *Metrics {
 	return &Metrics{ToolCalls: map[string]int{}, StartTime: time.Now()}
 }
 
-func (m *Metrics) IncChats()               { m.mu.Lock(); m.Chats++; m.mu.Unlock() }
-func (m *Metrics) IncTool(name string)     { m.mu.Lock(); m.ToolCalls[name]++; m.mu.Unlock() }
-func (m *Metrics) IncToolErrors()          { m.mu.Lock(); m.ToolErrors++; m.mu.Unlock() }
-func (m *Metrics) IncLLMErrors()           { m.mu.Lock(); m.LLMErrors++; m.mu.Unlock() }
-func (m *Metrics) AddLatency(ms int64)     { m.mu.Lock(); m.TotalLatencyMs += ms; m.mu.Unlock() }
-func (m *Metrics) IncRateLimited()         { m.mu.Lock(); m.RateLimitedReqs++; m.mu.Unlock() }
+func (m *Metrics) IncChats()           { m.mu.Lock(); m.Chats++; m.mu.Unlock() }
+func (m *Metrics) IncTool(name string) { m.mu.Lock(); m.ToolCalls[name]++; m.mu.Unlock() }
+func (m *Metrics) IncToolErrors()      { m.mu.Lock(); m.ToolErrors++; m.mu.Unlock() }
+func (m *Metrics) IncLLMErrors()       { m.mu.Lock(); m.LLMErrors++; m.mu.Unlock() }
+func (m *Metrics) AddLatency(ms int64) { m.mu.Lock(); m.TotalLatencyMs += ms; m.mu.Unlock() }
+func (m *Metrics) IncRateLimited()     { m.mu.Lock(); m.RateLimitedReqs++; m.mu.Unlock() }
 func (m *Metrics) AddTokens(prompt, completion int64) {
 	m.mu.Lock()
 	m.PromptTokens += prompt

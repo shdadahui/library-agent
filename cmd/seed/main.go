@@ -1,8 +1,9 @@
 // 种子数据导入工具：初始化书目、馆藏、演示读者与预置借阅场景。
 // 用法: go run ./cmd/seed [-reset] [-fetch] [-rows 200] [-driver sqlite|mysql] [-dsn ...]
-//   -reset  重建数据库（删除旧库，仅 sqlite）
-//   -fetch  从 Open Library API 扩充书目（网络可用时）
-//   -rows   扩充书目条数上限（默认 200）
+//
+//	-reset  重建数据库（删除旧库，仅 sqlite）
+//	-fetch  从 Open Library API 扩充书目（网络可用时）
+//	-rows   扩充书目条数上限（默认 200）
 package main
 
 import (

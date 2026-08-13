@@ -62,8 +62,8 @@ func (s *Store) Close() error { return s.DB.Close() }
 
 // schemaTokens 方言差异标记。
 type schemaTokens struct {
-	pk       string // 主键定义
-	isbnIdx  string // isbn 索引（SQLite 部分唯一索引 / MySQL 普通索引）
+	pk      string // 主键定义
+	isbnIdx string // isbn 索引（SQLite 部分唯一索引 / MySQL 普通索引）
 }
 
 var (

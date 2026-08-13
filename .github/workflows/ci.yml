@@ -1,0 +1,60 @@
+# 图书馆 Agent 持续集成
+# - push/PR：静态检查 + 编译 + 全量单测 + mock 评测（无需外部服务/密钥）
+# - 手动触发（workflow_dispatch）：真实 DeepSeek 评测（需配置 DEEPSEEK_API_KEY secret）
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 静态检查 + 编译 + 单测 + mock 评测
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: 格式检查（gofmt）
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "以下文件未按 gofmt 格式化："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: 静态检查（go vet）
+        run: go vet ./...
+
+      - name: 编译
+        run: go build ./...
+
+      - name: 全量单测（内存库，无需 MySQL/Redis）
+        run: go test ./... -count=1 -timeout 300s
+
+      - name: Mock 评测（37 用例，无需 API Key）
+        run: go run ./cmd/eval -mock
+
+  llm-eval:
+    name: 真实 LLM 评测（手动触发）
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: 真实 DeepSeek 评测（38 用例）
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: go run ./cmd/eval -config config.json

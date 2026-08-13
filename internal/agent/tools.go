@@ -128,9 +128,9 @@ func AllTools() []*ToolDef {
 					}
 				}
 				return map[string]any{
-					"book":           b,
+					"book":            b,
 					"available_items": avail,
-					"guide":          "请凭读者证到馆，在自助借还机或服务台办理借阅手续。",
+					"guide":           "请凭读者证到馆，在自助借还机或服务台办理借阅手续。",
 				}, nil
 			},
 		},

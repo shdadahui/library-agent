@@ -24,9 +24,9 @@ var (
 
 // 登录限流：连续失败 N 次锁定 15 分钟。
 const (
-	maxLoginFails  = 5
-	lockDuration   = 15 * time.Minute
-	failKeyPrefix  = "login_fail:"
+	maxLoginFails = 5
+	lockDuration  = 15 * time.Minute
+	failKeyPrefix = "login_fail:"
 )
 
 // SessionStore 会话存储接口（Redis 实现 + 内存兜底）。
@@ -66,7 +66,7 @@ func (m *Manager) Register(username, password, name string) (*store.User, error)
 	}
 	// 创建读者（姓名可能重名，加注册时间戳避免条码冲突）
 	pid, err := m.st.InsertPatron(&store.Patron{
-		Name:   name,
+		Name:    name,
 		Barcode: "U" + time.Now().Format("150405") + username,
 	})
 	if err != nil {

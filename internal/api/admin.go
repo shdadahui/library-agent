@@ -53,12 +53,12 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	totalPatrons, _ := s.Svc.Patrons()
 	out := map[string]any{
-		"books":          stats.Books,
-		"copies":         stats.Copies,
-		"available":      stats.Available,
-		"borrowed":       stats.Borrowed,
-		"holds_waiting":  stats.HoldsWaiting,
-		"patrons":        len(totalPatrons),
+		"books":             stats.Books,
+		"copies":            stats.Copies,
+		"available":         stats.Available,
+		"borrowed":          stats.Borrowed,
+		"holds_waiting":     stats.HoldsWaiting,
+		"patrons":           len(totalPatrons),
 		"unpaid_fines_yuan": float64(stats.UnpaidFinesCents) / 100,
 	}
 	writeJSON(w, http.StatusOK, out)

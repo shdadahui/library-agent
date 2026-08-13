@@ -38,7 +38,7 @@ func main() {
 		if dir := filepath.Dir(cfg.DB.DSN); dir != "." && dir != "" {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				slog.Error("创建数据目录失败", "err", err)
-			os.Exit(1)
+				os.Exit(1)
 			}
 		}
 	}

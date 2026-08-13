@@ -180,17 +180,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		errMsg = runErr.Error()
 	}
 	s.appendChatLog(map[string]any{
-		"time":            time.Now().Format(time.RFC3339),
-		"user":            user.Username,
-		"patron_id":       patron.ID,
-		"conversation_id": cid,
-		"input":           body.Message,
-		"tools":           tools,
-		"output":          reply,
-		"latency_ms":      latency.Milliseconds(),
-		"prompt_tokens":   promptTok,
+		"time":              time.Now().Format(time.RFC3339),
+		"user":              user.Username,
+		"patron_id":         patron.ID,
+		"conversation_id":   cid,
+		"input":             body.Message,
+		"tools":             tools,
+		"output":            reply,
+		"latency_ms":        latency.Milliseconds(),
+		"prompt_tokens":     promptTok,
 		"completion_tokens": completionTok,
-		"error":           errMsg,
+		"error":             errMsg,
 	})
 
 	// 前端需要知道会话 ID（新建会话时）

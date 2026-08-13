@@ -24,32 +24,32 @@ type Biblio struct {
 
 // Item 馆藏副本（实体书/条码）。
 type Item struct {
-	ID              int64  `json:"id"`
-	BiblioID        int64  `json:"biblio_id"`
-	Barcode         string `json:"barcode"`
-	Status          string `json:"status"` // available / borrowed / on_hold / lost
-	Location        string `json:"location"`
+	ID               int64  `json:"id"`
+	BiblioID         int64  `json:"biblio_id"`
+	Barcode          string `json:"barcode"`
+	Status           string `json:"status"` // available / borrowed / on_hold / lost
+	Location         string `json:"location"`
 	LoanDurationDays int    `json:"loan_duration_days"`
 }
 
 // Patron 读者。
 type Patron struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
 	Barcode string `json:"barcode"`
-	Phone  string `json:"phone,omitempty"`
+	Phone   string `json:"phone,omitempty"`
 }
 
 // Loan 流通记录（借阅）。
 type Loan struct {
-	ID           int64  `json:"id"`
-	ItemID       int64  `json:"item_id"`
-	PatronID     int64  `json:"patron_id"`
-	CheckoutDate string `json:"checkout_date"`
-	DueDate      string `json:"due_date"`
+	ID           int64   `json:"id"`
+	ItemID       int64   `json:"item_id"`
+	PatronID     int64   `json:"patron_id"`
+	CheckoutDate string  `json:"checkout_date"`
+	DueDate      string  `json:"due_date"`
 	CheckinDate  *string `json:"checkin_date,omitempty"`
-	Renewals     int    `json:"renewals"`
-	Status       string `json:"status"` // active / returned
+	Renewals     int     `json:"renewals"`
+	Status       string  `json:"status"` // active / returned
 }
 
 // Fine 罚款。

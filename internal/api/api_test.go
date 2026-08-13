@@ -39,10 +39,10 @@ func newTestAPIServer(t *testing.T) (*httptest.Server, string, string) {
 	sess := auth.NewMemorySessionStore()
 	am := auth.NewManager(st, sess, time.Hour)
 	cfg := &config.Config{
-		Providers:    map[string]config.Provider{"mock": {DefaultModel: "mock"}},
+		Providers:      map[string]config.Provider{"mock": {DefaultModel: "mock"}},
 		ActiveProvider: "mock",
-		Temperature:  0,
-		MaxIterations: 3,
+		Temperature:    0,
+		MaxIterations:  3,
 	}
 	svc := service.New(st)
 	loop := agent.NewLoop(cfg, svc)
@@ -66,7 +66,7 @@ func newTestAPIServer(t *testing.T) (*httptest.Server, string, string) {
 		}
 		defer resp.Body.Close()
 		var d struct {
-			Token string `json:"token"`
+			Token string      `json:"token"`
 			User  *store.User `json:"user"`
 		}
 		decodeJSON(resp, &d)

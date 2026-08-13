@@ -309,7 +309,7 @@ func seedSeats(st *store.Store, idByPatron map[string]int64) {
 func seedGate(st *store.Store, idByPatron map[string]int64) {
 	today := store.Now()
 	inPairs := []struct {
-		patron   string
+		patron    string
 		direction string
 	}{
 		{"张三", "in"}, {"李四", "in"}, {"王五", "in"}, {"王五", "out"}, {"赵六", "in"},

@@ -30,7 +30,7 @@ type SeatReservation struct {
 
 // 座位相关错误。
 var (
-	ErrSeatNotFound       = errors.New("座位不存在")
+	ErrSeatNotFound        = errors.New("座位不存在")
 	ErrReservationNotFound = errors.New("预约记录不存在")
 )
 

@@ -9,8 +9,8 @@ import (
 type GateLog struct {
 	ID         int64  `json:"id"`
 	PatronID   int64  `json:"patron_id"`
-	Direction  string `json:"direction"` // in / out
-	Gate       string `json:"gate"`      // 闸口：东门 / 西门 / 北门
+	Direction  string `json:"direction"`   // in / out
+	Gate       string `json:"gate"`        // 闸口：东门 / 西门 / 北门
 	VerifiedBy string `json:"verified_by"` // card / qr / face
 	CreatedAt  string `json:"created_at"`
 }

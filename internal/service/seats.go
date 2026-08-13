@@ -25,14 +25,14 @@ var SeatSlots = []SlotDef{
 
 // 座位业务错误。
 var (
-	ErrSeatSlotInvalid    = errors.New("无效的预约时段")
-	ErrSeatDatePast       = errors.New("不能预约过去的日期")
-	ErrSeatAlreadyReserved = errors.New("该座位在该时段已被预约")
-	ErrSeatQuotaReached   = errors.New("同一读者一天最多预约 1 个座位，请先取消已有预约")
-	ErrSeatReservationClosed = errors.New("该预约已关闭，无法操作")
+	ErrSeatSlotInvalid        = errors.New("无效的预约时段")
+	ErrSeatDatePast           = errors.New("不能预约过去的日期")
+	ErrSeatAlreadyReserved    = errors.New("该座位在该时段已被预约")
+	ErrSeatQuotaReached       = errors.New("同一读者一天最多预约 1 个座位，请先取消已有预约")
+	ErrSeatReservationClosed  = errors.New("该预约已关闭，无法操作")
 	ErrSeatReservationNotMine = errors.New("只能操作自己的座位预约")
-	ErrSeatCheckinTime    = errors.New("只能在预约时段内签到")
-	ErrSeatCheckinDate    = errors.New("只能在预约当天签到")
+	ErrSeatCheckinTime        = errors.New("只能在预约时段内签到")
+	ErrSeatCheckinDate        = errors.New("只能在预约当天签到")
 )
 
 // SeatArea 区域与座位数（前端展示）。
@@ -50,7 +50,7 @@ type SeatView struct {
 
 // SeatAreas 区域统计。
 func (s *Service) SeatAreas() ([]SeatArea, error) {
-// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	// 惰性过期：清理超时未签到的预约，释放座位（幂等）
 	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (s *Service) SeatByID(id int64) (*store.Seat, error) {
 
 // Seats 座位列表。
 func (s *Service) Seats(area, seatType string) ([]SeatView, error) {
-// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	// 惰性过期：清理超时未签到的预约，释放座位（幂等）
 	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (s *Service) AvailableSeats(date, slot string) ([]SeatView, error) {
 	if !validSlot(slot) {
 		return nil, ErrSeatSlotInvalid
 	}
-// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	// 惰性过期：清理超时未签到的预约，释放座位（幂等）
 	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
 		return nil, err
 	}
@@ -203,9 +203,9 @@ func (s *Service) CheckinSeat(patronID, resID int64) (*store.SeatReservation, er
 // SeatReservationView 预约视图（含座位信息）。
 type SeatReservationView struct {
 	store.SeatReservation
-	SeatNo   string `json:"seat_no"`
-	Area     string `json:"area"`
-	SeatType string `json:"seat_type"`
+	SeatNo    string `json:"seat_no"`
+	Area      string `json:"area"`
+	SeatType  string `json:"seat_type"`
 	SlotLabel string `json:"slot_label"`
 }
 
