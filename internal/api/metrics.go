@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -100,6 +101,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 // appendChatLog 追加一条对话日志（JSON Lines，data/logs/chat-YYYYMMDD.jsonl）。
+// 日志文件按天滚动；定期清理 7 天前的旧日志，防止磁盘无限增长。
 func (s *Server) appendChatLog(entry map[string]any) {
 	b, err := json.Marshal(entry)
 	if err != nil {
@@ -112,6 +114,32 @@ func (s *Server) appendChatLog(entry map[string]any) {
 	}
 	defer f.Close()
 	_, _ = f.Write(append(b, '\n'))
+	s.rotateChatLogs()
+}
+
+// rotateChatLogs 节流清理：每小时最多扫描一次，删除 7 天前的 chat-*.jsonl。
+var lastLogRotate = time.Time{}
+
+func (s *Server) rotateChatLogs() {
+	if time.Since(lastLogRotate) < time.Hour {
+		return
+	}
+	lastLogRotate = time.Now()
+	cutoff := time.Now().AddDate(0, 0, -7).Format("2006-01-02")
+	entries, err := os.ReadDir("data/logs")
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "chat-") || !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+		date := strings.TrimSuffix(strings.TrimPrefix(name, "chat-"), ".jsonl")
+		if date != "" && date < cutoff {
+			_ = os.Remove("data/logs/" + name)
+		}
+	}
 }
 
 func chatLogPath() string {

@@ -104,3 +104,45 @@ func TestAvailableSeatsExcludesReserved(t *testing.T) {
 		}
 	}
 }
+
+func TestExpireStaleSeats(t *testing.T) {
+	svc, st, p1, _ := seedSeatTest(t)
+	// 昨天预约（active）→ 应过期
+	tomorrow := addDaysForTest(store.Now(), 1)
+	past := addDaysForTest(store.Now(), -1)
+	if _, err := svc.ReserveSeat(p1, 1, tomorrow, "afternoon"); err != nil {
+		t.Fatalf("预约失败: %v", err)
+	}
+	// 直接插入一条昨日预约（绕过服务层日期校验）
+	sid := int64(1)
+	if _, err := st.CreateSeatReservation(&store.SeatReservation{
+		SeatID: sid, PatronID: p1, ReserveDate: past, Slot: "afternoon",
+		Status: "active", CreatedAt: store.NowDateTime(),
+	}); err != nil {
+		t.Fatalf("插入昨日预约失败: %v", err)
+	}
+	n, err := st.ExpireStaleSeatReservations()
+	if err != nil {
+		t.Fatalf("过期清理失败: %v", err)
+	}
+	if n < 1 {
+		t.Fatalf("应至少清理 1 条昨日预约，实际 %d", n)
+	}
+	// 昨日 active 应已过期
+	var cnt int
+	_ = st.DB.QueryRow(`SELECT COUNT(*) FROM seat_reservations WHERE reserve_date=? AND status='active'`, past).Scan(&cnt)
+	if cnt != 0 {
+		t.Fatalf("昨日预约应已过期，仍 active %d 条", cnt)
+	}
+	// 明日预约不受影响
+	rs, _ := svc.MySeatReservations(p1, true)
+	found := false
+	for _, r := range rs {
+		if r.ReserveDate == tomorrow && r.Status == "active" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("明日预约不应被误清理")
+	}
+}

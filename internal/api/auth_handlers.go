@@ -1,12 +1,37 @@
 package api
 
 import (
+	"hash/fnv"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/shdadahui/library-agent/internal/auth"
 )
+
+// hashIP 将 IP 转为稳定正整数（限流 key 用，避免原始 IP 字符串入 key）。
+func hashIP(ip string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(ip))
+	return int64(h.Sum64() % 1_000_000_007)
+}
+
+// clientIP 提取客户端 IP：优先 X-Forwarded-For（nginx 反代），
+// 否则从 RemoteAddr 剥离端口（RemoteAddr 形如 "127.0.0.1:53211"，
+// 若直接入 key 会因端口变化导致限流永不触发）。
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
 
 // checkPasswordStrength 密码强度校验：至少 6 位且包含字母与数字。
 func checkPasswordStrength(pw string) string {
@@ -45,7 +70,13 @@ type LoginRequest struct {
 }
 
 // handleRegister 注册：创建读者 + 登录用户，返回会话令牌。
+// 防滥用：同一 IP 每小时最多注册 5 次（Redis 计数）。
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if err := s.Auth.CheckRate("reg_rate:", hashIP(clientIP(r)), 5, time.Hour); err != nil {
+		s.metrics.IncRateLimited()
+		writeErr(w, http.StatusTooManyRequests, "注册过于频繁，请稍后再试")
+		return
+	}
 	var body RegisterRequest
 	if !decodeBody(w, r, &body) {
 		return

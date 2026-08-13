@@ -50,9 +50,11 @@ func main() {
 	defer st.Close()
 
 	// 会话存储：优先 Redis，失败降级内存（日志提示）
+	sessBackend := "memory"
 	var sess auth.SessionStore = auth.NewMemorySessionStore()
 	if rs, err := auth.NewRedisSessionStore(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB); err == nil {
 		sess = rs
+		sessBackend = "redis"
 		slog.Info("会话存储", "backend", "redis", "addr", cfg.Redis.Addr)
 	} else {
 		slog.Warn("Redis 不可用，会话降级为内存存储", "err", err)
@@ -63,7 +65,7 @@ func main() {
 	// 初始化 RAG 知识库（Agent 工具 rag_search 用）
 	agent.RagIndex = rag.New(rag.DefaultDocs)
 	loop := agent.NewLoop(cfg, svc)
-	srv := api.NewServer(cfg, svc, loop, am)
+	srv := api.NewServerWithSession(cfg, svc, loop, am, sessBackend)
 
 	slog.Info("图书馆 Agent 已启动", "url", "http://localhost"+*addr)
 	slog.Info("运行配置", "db", cfg.DB.Driver, "llm", cfg.ActiveProvider, "model", cfg.Active().DefaultModel)

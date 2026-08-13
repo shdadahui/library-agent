@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shdadahui/library-agent/internal/agent"
 	"github.com/shdadahui/library-agent/internal/auth"
@@ -20,17 +21,23 @@ import (
 
 // Server HTTP 服务。
 type Server struct {
-	Svc     *service.Service
-	Loop    *agent.Loop
-	Cfg     *config.Config
-	Auth    *auth.Manager
-	metrics *Metrics
-	mux     *http.ServeMux
+	Svc            *service.Service
+	Loop           *agent.Loop
+	Cfg            *config.Config
+	Auth           *auth.Manager
+	SessionBackend string // redis / memory（会话存储后端，健康检查用）
+	metrics        *Metrics
+	mux            *http.ServeMux
 }
 
-// NewServer 创建服务并注册路由。
+// NewServer 创建服务并注册路由（默认 memory 会话后端）。
 func NewServer(cfg *config.Config, svc *service.Service, loop *agent.Loop, am *auth.Manager) *Server {
-	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, Auth: am, metrics: NewMetrics(), mux: http.NewServeMux()}
+	return NewServerWithSession(cfg, svc, loop, am, "memory")
+}
+
+// NewServerWithSession 创建服务，可指定会话存储后端（health 端点展示）。
+func NewServerWithSession(cfg *config.Config, svc *service.Service, loop *agent.Loop, am *auth.Manager, sessionBackend string) *Server {
+	s := &Server{Svc: svc, Loop: loop, Cfg: cfg, Auth: am, SessionBackend: sessionBackend, metrics: NewMetrics(), mux: http.NewServeMux()}
 	s.routes()
 	return s
 }
@@ -163,8 +170,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		n = 0
 	}
+	provider := s.Cfg.ActiveProvider
+	p := s.Cfg.Active()
+	llmOK := p.IsMock() || p.APIKey() != ""
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok", "provider": s.Cfg.ActiveProvider, "books": n,
+		"status":     "ok",
+		"provider":   provider,
+		"model":      p.DefaultModel,
+		"llm_ready":  llmOK,
+		"session":    s.SessionBackend,
+		"db":         s.Cfg.DB.Driver,
+		"books":      n,
+		"uptime_sec": int(time.Since(s.metrics.StartTime).Seconds()),
 	})
 }
 

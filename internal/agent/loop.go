@@ -169,10 +169,49 @@ func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCal
 	}
 	out := jsonMsg(result)
 	if len(out) > maxToolResultLen {
-		out = out[:maxToolResultLen] + "\n…(结果过长已截断，共 " + itoaSafe(len(out)) + " 字符)"
+		out = truncateJSON(out, maxToolResultLen)
 	}
 	emit(Event{Type: "tool_result", Data: map[string]any{"id": tc.ID, "name": tc.Function.Name, "result": result}})
 	return out
+}
+
+// truncateJSON 截断超长工具结果并保证回传 JSON 合法：
+// 结构化裁剪——解析后保留顶层前 3 个元素/key，并附 _truncated 提示字段；
+// 解析失败（非 JSON 文本）则纯文本截断兜底（附截断说明）。
+func truncateJSON(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	note := "\n…(结果过长已截断，共 " + itoaSafe(len(s)) + " 字符)"
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err == nil {
+		switch t := v.(type) {
+		case []any:
+			if len(t) > 3 {
+				cut := append([]any{}, t[:3]...)
+				cut = append(cut, map[string]any{"_truncated": true, "total": len(t)})
+				if b, err := json.Marshal(cut); err == nil {
+					return string(b)
+				}
+			}
+		case map[string]any:
+			if len(t) > 3 {
+				keys := make([]string, 0, len(t))
+				for k := range t {
+					keys = append(keys, k)
+				}
+				cut := map[string]any{}
+				for _, k := range keys[:3] {
+					cut[k] = t[k]
+				}
+				cut["_truncated"] = map[string]any{"total": len(t)}
+				if b, err := json.Marshal(cut); err == nil {
+					return string(b)
+				}
+			}
+		}
+	}
+	return s[:max] + note
 }
 
 // itoaSafe 整数转字符串（工具结果截断提示用）。

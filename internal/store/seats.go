@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"time"
 )
 
 // Seat 座位（区域 + 排/列网格布局）。
@@ -212,4 +213,76 @@ func (s *Store) UpdateSeatReservationStatus(id int64, from, to string) (bool, er
 func (s *Store) UpdateSeatStatus(id int64, status string) error {
 	_, err := s.DB.Exec(`UPDATE seats SET status=? WHERE id=?`, status, id)
 	return err
+}
+
+// slotEnd 各时段结束时间（HH:MM）。
+var slotEnd = map[string]string{
+	"morning": "12:00", "afternoon": "17:00", "evening": "22:00",
+}
+
+// seatReservationExpired 判断预约是否已过期：
+// - 预约日期早于今天 → 过期
+// - 今天且时段已结束且未签到（active）→ 过期（超时未到，自动释放）
+// - 今天已签到（checked_in）且时段已结束 → 释放实时占用（记录保留表示用过）
+func seatReservationExpired(date, slot, status string) bool {
+	today := Now()
+	if date < today {
+		return true
+	}
+	if date > today {
+		return false
+	}
+	end, ok := slotEnd[slot]
+	if !ok {
+		return false
+	}
+	return time.Now().Format("15:04") >= end
+}
+
+// ExpireStaleSeatReservations 惰性清理过期预约：
+// - active 过期 → 置 expired
+// - checked_in 时段结束 → 释放座位实时占用（occupied → available）
+// 返回处理的记录数。幂等，可在任何座位查询前调用。
+func (s *Store) ExpireStaleSeatReservations() (int, error) {
+	rows, err := s.DB.Query(`SELECT id, seat_id, reserve_date, slot, status
+		FROM seat_reservations WHERE status IN ('active','checked_in')`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var expireIDs, releaseSeatIDs []int64
+	for rows.Next() {
+		var id, seatID int64
+		var date, slot, status string
+		if err := rows.Scan(&id, &seatID, &date, &slot, &status); err != nil {
+			return 0, err
+		}
+		if !seatReservationExpired(date, slot, status) {
+			continue
+		}
+		if status == "active" {
+			expireIDs = append(expireIDs, id)
+		} else {
+			releaseSeatIDs = append(releaseSeatIDs, seatID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range expireIDs {
+		if r, err := s.DB.Exec(`UPDATE seat_reservations SET status='expired' WHERE id=? AND status='active'`, id); err == nil {
+			if c, _ := r.RowsAffected(); c > 0 {
+				n++
+			}
+		}
+	}
+	for _, seatID := range releaseSeatIDs {
+		if r, err := s.DB.Exec(`UPDATE seats SET status='available' WHERE id=? AND status='occupied'`, seatID); err == nil {
+			if c, _ := r.RowsAffected(); c > 0 {
+				n++
+			}
+		}
+	}
+	return n, nil
 }

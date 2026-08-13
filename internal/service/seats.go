@@ -50,6 +50,10 @@ type SeatView struct {
 
 // SeatAreas 区域统计。
 func (s *Service) SeatAreas() ([]SeatArea, error) {
+// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
+		return nil, err
+	}
 	seats, err := s.st.ListSeats("", "")
 	if err != nil {
 		return nil, err
@@ -81,6 +85,10 @@ func (s *Service) SeatByID(id int64) (*store.Seat, error) {
 
 // Seats 座位列表。
 func (s *Service) Seats(area, seatType string) ([]SeatView, error) {
+// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
+		return nil, err
+	}
 	seats, err := s.st.ListSeats(area, seatType)
 	if err != nil {
 		return nil, err
@@ -96,6 +104,10 @@ func (s *Service) Seats(area, seatType string) ([]SeatView, error) {
 func (s *Service) AvailableSeats(date, slot string) ([]SeatView, error) {
 	if !validSlot(slot) {
 		return nil, ErrSeatSlotInvalid
+	}
+// 惰性过期：清理超时未签到的预约，释放座位（幂等）
+	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
+		return nil, err
 	}
 	seats, err := s.st.AvailableSeats(date, slot)
 	if err != nil {
@@ -199,6 +211,9 @@ type SeatReservationView struct {
 
 // MySeatReservations 我的预约（含座位信息）。
 func (s *Service) MySeatReservations(patronID int64, activeOnly bool) ([]SeatReservationView, error) {
+	if _, err := s.st.ExpireStaleSeatReservations(); err != nil {
+		return nil, err
+	}
 	rs, err := s.st.PatronSeatReservations(patronID, activeOnly)
 	if err != nil {
 		return nil, err

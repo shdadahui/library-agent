@@ -473,11 +473,12 @@
       "category": "座位",
       "patron": "王五",
       "input": "帮我预约明天的自习座位",
-      "accept_tools": [
+      "note": "王五无预约：预约明天座位应成功（跨日）",
+      "expected_tools": [
         "search_seats",
         "reserve_seat"
       ],
-      "note": "王五无预约：预约明天座位应成功（跨日）"
+      "tool_order": "contains"
     }
   ]
 }
