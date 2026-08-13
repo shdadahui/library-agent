@@ -471,3 +471,9 @@ func normalizeQuery(q string) string {
 	)
 	return strings.TrimSpace(r.Replace(q))
 }
+
+// UpdateItemsLocation 回填某书目全部副本的馆藏位置（seed 幂等迁移用）。
+func (s *Store) UpdateItemsLocation(biblioID int64, loc string) error {
+	_, err := s.DB.Exec(`UPDATE items SET location=? WHERE biblio_id=?`, loc, biblioID)
+	return err
+}

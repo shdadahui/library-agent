@@ -55,6 +55,8 @@ func (l *Loop) runMock(ctx context.Context, patron *store.Patron, userMsg string
 			out = l.mockHold(ctx, patron, msg, emit)
 		case strings.Contains(msg, "馆藏") || strings.Contains(msg, "可借") || strings.Contains(msg, "能借") || strings.Contains(msg, "有现书"):
 			out = l.mockAvailability(ctx, patron, msg, emit)
+		case strings.Contains(msg, "哪里") || strings.Contains(msg, "在哪") || strings.Contains(msg, "位置") || strings.Contains(msg, "几层") || strings.Contains(msg, "哪个区") || strings.Contains(msg, "哪个书架"):
+			out = l.mockLocation(ctx, patron, msg, emit)
 		case strings.Contains(msg, "我借了") || strings.Contains(msg, "我借的") || strings.Contains(msg, "借阅") || strings.Contains(msg, "我借了什么"):
 			out = l.mockLoans(patron, emit)
 		case strings.Contains(msg, "借"):
@@ -582,4 +584,37 @@ func (l *Loop) mockGateStatus(patron *store.Patron, emit func(Event)) string {
 	}
 	emitResult(emit, "gate_status", st)
 	return fmt.Sprintf("当前在馆 %d 人；今日入馆 %d 人次、出馆 %d 人次。", st.InLibrary, st.InToday, st.OutToday)
+}
+
+// mockLocation 查询图书所在位置（模拟真实 LLM：search → availability → 如实回答位置）。
+// 防幻觉：位置仅显示系统记录值；未记录具体位置时如实说明，不编造楼层/书架。
+func (l *Loop) mockLocation(ctx context.Context, patron *store.Patron, msg string, emit func(Event)) string {
+	title := extractBookTitle(msg)
+	if title == "" {
+		return "请告诉我具体书名，例如「《百年孤独》在图书馆的哪里？」"
+	}
+	emitTool(emit, "search_books", map[string]any{"q": title})
+	books, err := l.Svc.SearchBooks(title, "", 5)
+	if err != nil || len(books) == 0 {
+		return "没有找到《" + title + "》这本书。"
+	}
+	emitResult(emit, "search_books", books)
+	b := books[0]
+	emitTool(emit, "get_book_availability", map[string]any{"book_id": b.ID})
+	_, items, err := l.Svc.BookAvailability(b.ID)
+	if err != nil {
+		return "查询馆藏出错：" + err.Error()
+	}
+	emitResult(emit, "get_book_availability", map[string]any{"book": b, "items": items})
+	loc := ""
+	for _, it := range items {
+		if it.Location != "" {
+			loc = it.Location
+			break
+		}
+	}
+	if loc == "" || loc == "总馆" {
+		return fmt.Sprintf("据馆藏系统记录，《%s》位于总馆，系统未记录更具体的楼层或书架位置。", b.Title)
+	}
+	return fmt.Sprintf("据馆藏系统记录，《%s》位于「%s」。", b.Title, loc)
 }

@@ -92,13 +92,14 @@
       "category": "借阅",
       "patron": "王五",
       "input": "帮我借《三体》",
-      "expected_tools": [
+      "tool_order": "contains",
+      "note": "有可借副本→引导到馆借；全部借出→预约排队（两者皆可）",
+      "accept_tools": [
         "search_books",
         "get_book_availability",
+        "guide_borrow",
         "place_hold"
-      ],
-      "tool_order": "contains",
-      "note": "三体全部借出：借书意图下自动转为预约排队"
+      ]
     },
     {
       "id": "circ-02",
@@ -480,6 +481,36 @@
         "reserve_seat"
       ],
       "tool_order": "contains"
+    },
+    {
+      "id": "ask-01",
+      "category": "防幻觉",
+      "patron": "张三",
+      "input": "《百年孤独》在图书馆的哪里？",
+      "accept_tools": [
+        "search_books",
+        "get_book_availability",
+        "guide_borrow"
+      ],
+      "expect_text": [
+        "文学借阅区"
+      ],
+      "note": "位置以系统记录为准：百年孤独映射 3F 文学借阅区，不得编造楼层/书架"
+    },
+    {
+      "id": "ask-02",
+      "category": "防幻觉",
+      "patron": "张三",
+      "input": "《三体》在几楼哪个区？",
+      "accept_tools": [
+        "search_books",
+        "get_book_availability",
+        "guide_borrow"
+      ],
+      "expect_text": [
+        "文学借阅区"
+      ],
+      "note": "重复问法验证位置回答稳定（两次不得给出不同位置）"
     }
   ]
 }
