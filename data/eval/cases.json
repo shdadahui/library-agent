@@ -440,7 +440,8 @@
       "patron": "张三",
       "input": "帮我查一下📚《三体》📚",
       "accept_tools": [
-        "search_books"
+        "search_books",
+        "get_book_availability"
       ],
       "note": "emoji 混合书名：应正确提取书名检索"
     },
