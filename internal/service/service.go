@@ -319,16 +319,22 @@ type ReturnResult struct {
 // 任何一步失败整体回滚，杜绝半完成状态。
 func (s *Service) Return(loanID int64) (*ReturnResult, error) {
 	today := store.Now()
-	fine, wakeName, err := s.st.ReturnTx(loanID, today, FinePerDayCents)
+	txRes, err := s.st.ReturnTx(loanID, today, FinePerDayCents)
 	if err != nil {
 		if errors.Is(err, store.ErrLoanNotActive) {
 			return nil, ErrLoanNotActive
 		}
 		return nil, err
 	}
-	res := &ReturnResult{LoanID: loanID, FineCents: fine}
-	if wakeName != "" {
-		res.HoldWakeUp = fmt.Sprintf("已通知预约者 %s 到馆取书", wakeName)
+	res := &ReturnResult{LoanID: loanID, FineCents: txRes.Fine}
+	if txRes.WakeName != "" {
+		res.HoldWakeUp = fmt.Sprintf("已通知预约者 %s 到馆取书", txRes.WakeName)
+		// 通知：预约到书（还书唤醒预约者）
+		s.NotifyHoldReady(txRes.WakePatronID, txRes.WakeBiblioTitle)
+	}
+	// 通知：逾期罚款
+	if txRes.Fine > 0 {
+		s.NotifyFine(txRes.LoanPatronID, txRes.LoanBiblioTitle, txRes.Fine)
 	}
 	return res, nil
 }
@@ -423,9 +429,27 @@ func (s *Service) PlaceHold(patronID, biblioID int64) (*store.Hold, error) {
 	return h, nil
 }
 
-// PatronHolds 读者预约列表。
-func (s *Service) PatronHolds(patronID int64) ([]store.Hold, error) {
-	return s.st.PatronHolds(patronID)
+// HoldView 预约视图（含书名，供前端"我的预约"面板）。
+type HoldView struct {
+	store.Hold
+	Title string `json:"title"`
+}
+
+// PatronHolds 读者预约列表（含书名）。
+func (s *Service) PatronHolds(patronID int64) ([]HoldView, error) {
+	holds, err := s.st.PatronHolds(patronID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]HoldView, 0, len(holds))
+	for _, h := range holds {
+		v := HoldView{Hold: h}
+		if b, err := s.st.GetBiblio(h.BiblioID); err == nil {
+			v.Title = b.Title
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }
 
 // ---- 日期工具 ----
@@ -445,3 +469,14 @@ func daysBetween(a, b string) int {
 	tb, _ := time.Parse(DateLayout, b)
 	return int(tb.Sub(ta).Hours() / 24)
 }
+
+// centsToYuan 分转元字符串（保留 1 位小数，如 240→"2.4"）。
+func centsToYuan(cents int) string {
+	whole := cents / 100
+	frac := cents % 100 / 10
+	if frac == 0 {
+		return itoa(whole)
+	}
+	return itoa(whole) + "." + itoa(frac)
+}
+

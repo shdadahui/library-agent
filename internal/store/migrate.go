@@ -11,6 +11,16 @@ import (
 var migrations = []migration{
 	{Version: 1, SQL: "ALTER TABLE biblios ADD COLUMN online_url VARCHAR(512) NOT NULL DEFAULT ''", Desc: "书目加在线阅读 URL"},
 	{Version: 2, SQL: "ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'", Desc: "用户加角色字段（admin/user）"},
+	{Version: 3, SQL: `CREATE TABLE IF NOT EXISTS notifications(
+		id INTEGER PRIMARY KEY,
+		patron_id INTEGER NOT NULL,
+		type VARCHAR(16) NOT NULL DEFAULT 'system',
+		title VARCHAR(128) NOT NULL,
+		body VARCHAR(512) NOT NULL DEFAULT '',
+		read INTEGER NOT NULL DEFAULT 0,
+		created_at VARCHAR(32) NOT NULL
+	)`, Desc: "系统通知表（预约到书/逾期提醒）"},
+	{Version: 4, SQL: `CREATE INDEX IF NOT EXISTS idx_notif_patron ON notifications(patron_id, read)`, Desc: "通知查询索引"},
 }
 
 type migration struct {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -477,3 +478,18 @@ func (s *Store) UpdateItemsLocation(biblioID int64, loc string) error {
 	_, err := s.DB.Exec(`UPDATE items SET location=? WHERE biblio_id=?`, loc, biblioID)
 	return err
 }
+
+// CancelHoldByID 取消预约：仅等待中的本人预约可取消（fulfilled 已唤醒不可取消）。
+func (s *Store) CancelHoldByID(patronID, holdID int64) error {
+	res, err := s.DB.Exec(`UPDATE holds SET status='cancelled' WHERE id=? AND patron_id=? AND status='waiting'`, holdID, patronID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrHoldNotCancelable
+	}
+	return nil
+}
+
+// ErrHoldNotCancelable 预约不可取消（不存在/非本人/已唤醒）。
+var ErrHoldNotCancelable = errors.New("预约不存在或不可取消")

@@ -172,6 +172,10 @@ func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCal
 		out = truncateJSON(out, maxToolResultLen)
 	}
 	emit(Event{Type: "tool_result", Data: map[string]any{"id": tc.ID, "name": tc.Function.Name, "result": result}})
+	// 客户端-代理融合：工具成功执行后，向前端推送"去 XX"快捷入口（面板跳转）
+	if def.UIHint != nil {
+		emit(Event{Type: "suggest", Data: map[string]any{"panel": def.UIHint.Panel, "label": def.UIHint.Label}})
+	}
 	return out
 }
 

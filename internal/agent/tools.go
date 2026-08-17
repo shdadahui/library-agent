@@ -23,6 +23,14 @@ type ToolDef struct {
 	Description string
 	Parameters  map[string]any
 	Handler     func(ctx context.Context, s *service.Service, args map[string]any) (any, error)
+	// UIHint 前端入口引导：Agent 调用该工具时，向对话推送"去 XX"快捷入口
+	UIHint *UIHint `json:"ui_hint,omitempty"`
+}
+
+// UIHint 前端面板入口（客户端-代理融合：工具执行后引导用户到对应面板自主操作）。
+type UIHint struct {
+	Panel string `json:"panel"` // my-loans / my-fines / my-holds / my-notifications / seats / gate / report / admin
+	Label string `json:"label"`
 }
 
 // AllTools 全部工具定义。
@@ -31,6 +39,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "search_books",
 			Description: "按书名/作者/主题检索图书馆书目，返回书目列表及可借副本数。用户想找书、查某本书是否存在时使用。",
+			UIHint:      &UIHint{Panel: "search", Label: "浏览书目"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -55,6 +64,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "get_book_availability",
 			Description: "查询某本书的馆藏状态：各副本是否可借（available）、借出时的借阅人与应还日期、预约排队人数（queue_count）、全书是否有可借副本（has_available）。参数 book_id 与 title 二选一。",
+			UIHint:      &UIHint{Panel: "search", Label: "查看馆藏"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -77,6 +87,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "get_my_loans",
 			Description: "查询当前读者的在借图书清单：书名、应还日期、是否可续借及原因。用户问\"我借了什么\"\"快到期了\"\"我要续借\"时使用。",
+			UIHint:      &UIHint{Panel: "my-loans", Label: "去我的借阅"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -137,6 +148,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "get_library_stats",
 			Description: "查询图书馆全馆统计信息：藏书种数、馆藏副本总数、可借/在借副本数、等待预约数、读者数、未缴罚款总额。用户问\"图书馆有多少藏书\"\"全馆借出多少本\"\"有多少读者\"等统计问题时使用。无参数。",
+			UIHint:      &UIHint{Panel: "admin", Label: "查看运营数据"},
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},
@@ -175,6 +187,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "recommend_books",
 			Description: "智能推荐图书。用户说\"推荐几本书\"\"有什么好书\"\"我喜欢科幻\"\"根据我借过的书推荐\"等时使用。无 taste 时基于读者借阅历史个性化推荐；提供 taste（如\"科幻\"\"数学\"\"历史\"）按兴趣主题推荐；无历史时返回热门图书。",
+			UIHint:      &UIHint{Panel: "search", Label: "浏览推荐"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -202,6 +215,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "return_book",
 			Description: "归还图书。用户说\"我还书\"\"这本书还了\"时使用，先 get_my_loans 找到 loan_id。归还时自动计算逾期罚款并通知预约者。",
+			UIHint:      &UIHint{Panel: "my-loans", Label: "查看借阅"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -228,6 +242,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "renew_loan",
 			Description: "续借图书，延长借期（每本最多续借 2 次，逾期或被预约时不可续借）。用户说\"续借\"\"再借一段时间\"时，先 get_my_loans 找到 loan_id 和可续借状态。",
+			UIHint:      &UIHint{Panel: "my-loans", Label: "查看借阅"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -250,6 +265,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "get_my_fines",
 			Description: "查询当前读者的未缴逾期罚款。用户问\"我有多少罚款\"\"欠费\"\"逾期\"时使用。",
+			UIHint:      &UIHint{Panel: "my-fines", Label: "查看我的罚款"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -275,6 +291,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "place_hold",
 			Description: "预约一本书。无论当前排队人数多少，只要该书全部副本被借出（has_available 为 false）且读者尚未预约，就调用本工具为读者排队，归还后自动通知。用户说\"预约\"\"帮我排队\"时使用。",
+			UIHint:      &UIHint{Panel: "my-holds", Label: "查看我的预约"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -302,6 +319,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "search_seats",
 			Description: "查询图书馆座位：指定日期（YYYY-MM-DD，默认今天）与时段（morning 上午/afternoon 下午/evening 晚上，默认 afternoon）可预约的座位列表（含区域、类型、座位号）。用户问\"有哪些空座位\"\"帮我看看自习座位\"\"座位预约\"时使用；预约前必须先用本工具确认目标座位可用。",
+			UIHint:      &UIHint{Panel: "seats", Label: "去座位预约"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -342,6 +360,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "reserve_seat",
 			Description: "预约一个座位。参数 seat_id（search_seats 返回）、date（YYYY-MM-DD）、slot（morning/afternoon/evening）。同一读者一天最多 1 个座位。用户说\"预约座位\"\"帮我占个座\"\"订自习位\"时，先 search_seats 选座再调用本工具。",
+			UIHint:      &UIHint{Panel: "seats", Label: "去座位预约"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -380,6 +399,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "get_my_seat_reservations",
 			Description: "查询当前读者的座位预约（含座位号、区域、时段、状态）。用户问\"我预约的座位\"\"我的座位\"\"取消座位\"时先调用本工具找到 reservation_id。",
+			UIHint:      &UIHint{Panel: "seats", Label: "去座位预约"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -405,6 +425,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "cancel_seat_reservation",
 			Description: "取消座位预约（reservation_id 来自 get_my_seat_reservations）。用户说\"取消座位\"\"退掉座位\"时使用。",
+			UIHint:      &UIHint{Panel: "seats", Label: "去座位预约"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -431,6 +452,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "gate_scan",
 			Description: "门禁扫码通行：direction 为 in（入馆）或 out（出馆）。入馆时若读者有逾期图书或未缴罚款会返回提示（不拦截通行）。用户说\"我要进馆\"\"入馆\"\"出馆\"\"离开图书馆\"时使用。",
+			UIHint:      &UIHint{Panel: "gate", Label: "去门禁"},
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -458,6 +480,7 @@ func AllTools() []*ToolDef {
 		{
 			Name:        "gate_status",
 			Description: "查询图书馆门禁状态：当前在馆人数、今日入馆/出馆人次、最近通行记录。用户问\"馆里有多少人\"\"现在在馆人数\"\"门禁状态\"时使用。无参数。",
+			UIHint:      &UIHint{Panel: "gate", Label: "去门禁"},
 			Parameters: map[string]any{
 				"type":       "object",
 				"properties": map[string]any{},

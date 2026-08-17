@@ -89,24 +89,36 @@ func (s *Store) RenewCheckout(oldLoanID int64, oldDueDate, newDueDate string, re
 	return id, nil
 }
 
+// ReturnTxResult 归还事务结果（含通知生成所需的上下文）。
+type ReturnTxResult struct {
+	Fine            int
+	WakeName        string
+	WakePatronID    int64
+	WakeBiblioTitle string
+	LoanPatronID    int64
+	LoanBiblioTitle string
+}
+
 // ReturnTx 归还（单一事务）：关闭借阅 → 副本置可借 → 计算逾期罚款 → 唤醒最早预约。
 // 任一环节失败整体回滚，杜绝"罚款已收但书未还"等半完成状态。
-// 返回 (逾期罚款分, 被唤醒的预约者姓名, error)。
-func (s *Store) ReturnTx(loanID int64, checkinDate string, finePerDay int) (int, string, error) {
+func (s *Store) ReturnTx(loanID int64, checkinDate string, finePerDay int) (*ReturnTxResult, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return 0, "", err
+		return nil, err
 	}
 	defer tx.Rollback()
 
 	var itemID, patronID int64
 	var dueDate, status string
 	if err := tx.QueryRow(`SELECT item_id,patron_id,due_date,status FROM loans WHERE id=?`, loanID).Scan(&itemID, &patronID, &dueDate, &status); err != nil {
-		return 0, "", err
+		return nil, err
 	}
 	if status != "active" {
-		return 0, "", ErrLoanNotActive
+		return nil, ErrLoanNotActive
 	}
+	res := &ReturnTxResult{LoanPatronID: patronID}
+	// 借阅书名（通知用）
+	_ = tx.QueryRow(`SELECT b.title FROM biblios b JOIN items i ON i.biblio_id=b.id WHERE i.id=?`, itemID).Scan(&res.LoanBiblioTitle)
 	// 1. 逾期罚款（当天收尾，days 差为正才计）
 	fine := 0
 	if dueDate < checkinDate {
@@ -117,19 +129,19 @@ func (s *Store) ReturnTx(loanID int64, checkinDate string, finePerDay int) (int,
 		if fine > 0 {
 			if _, err := tx.Exec(`INSERT INTO fines(patron_id,loan_id,amount_cents,created_date,paid) VALUES(?,?,?,?,0)`,
 				patronID, loanID, fine, checkinDate); err != nil {
-				return 0, "", err
+				return nil, err
 			}
 		}
 	}
+	res.Fine = fine
 	// 2. 关闭借阅 + 副本可借
 	if _, err := tx.Exec(`UPDATE loans SET checkin_date=?, status='returned' WHERE id=?`, checkinDate, loanID); err != nil {
-		return 0, "", err
+		return nil, err
 	}
 	if _, err := tx.Exec(`UPDATE items SET status='available' WHERE id=?`, itemID); err != nil {
-		return 0, "", err
+		return nil, err
 	}
 	// 3. 唤醒最早 waiting 预约（同一事务内）
-	wakeName := ""
 	var biblioID int64
 	if err := tx.QueryRow(`SELECT biblio_id FROM items WHERE id=?`, itemID).Scan(&biblioID); err == nil {
 		var hid int64
@@ -138,16 +150,18 @@ func (s *Store) ReturnTx(loanID int64, checkinDate string, finePerDay int) (int,
 			if _, err := tx.Exec(`UPDATE holds SET status='fulfilled', item_id=? WHERE id=?`, itemID, hid); err == nil {
 				var pid int64
 				if err := tx.QueryRow(`SELECT patron_id FROM holds WHERE id=?`, hid).Scan(&pid); err == nil {
-					// 事务内查读者名（避免经 Store.DB 复用连接导致单连接自锁）
-					_ = tx.QueryRow(`SELECT name FROM patrons WHERE id=?`, pid).Scan(&wakeName)
+					// 事务内查读者名与书名（避免经 Store.DB 复用连接导致单连接自锁）
+					_ = tx.QueryRow(`SELECT name FROM patrons WHERE id=?`, pid).Scan(&res.WakeName)
+					_ = tx.QueryRow(`SELECT title FROM biblios WHERE id=?`, biblioID).Scan(&res.WakeBiblioTitle)
+					res.WakePatronID = pid
 				}
 			}
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, "", err
+		return nil, err
 	}
-	return fine, wakeName, nil
+	return res, nil
 }
 
 // FulfillHoldTx 已由 ReturnTx 内部实现替代，保留占位避免外部引用编译失败。

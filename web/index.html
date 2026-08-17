@@ -321,6 +321,44 @@
 
   .empty-tip { text-align: center; color: var(--muted); margin-top: 12vh; font-size: 14px; }
   .empty-tip .big { font-size: 42px; display: block; margin-bottom: 12px; }
+
+/* ---- 我的面板（客户端自主操作） ---- */
+#myModal { display: none; position: fixed; inset: 0; background: rgba(10,14,20,.5); z-index: 1200; align-items: flex-start; justify-content: center; overflow: auto; padding: 48px 16px; }
+#myModal.on { display: flex; }
+#myModal .box { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; width: 640px; max-width: 100%; padding: 22px 24px; position: relative; }
+#myModal .box h2 { font-size: 17px; font-weight: 500; margin-bottom: 2px; }
+#myModal .box .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+#myModal .close { position: absolute; right: 14px; top: 12px; background: none; border: none; font-size: 16px; cursor: pointer; color: var(--muted); }
+#myTabs { display: flex; gap: 6px; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 10px; flex-wrap: wrap; }
+#myTabs button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 8px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; }
+#myTabs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+#myTabs button .bd { background: var(--err); color: #fff; border-radius: 8px; font-size: 10.5px; padding: 0 5px; margin-left: 4px; }
+.my-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow: auto; }
+.my-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+.my-item .t { flex: 1; min-width: 0; }
+.my-item .t .ti { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.my-item .t .su { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.my-item .tag { font-size: 11px; padding: 2px 8px; border-radius: 8px; background: rgba(0,0,0,.05); color: var(--muted); white-space: nowrap; }
+.my-item .tag.overdue { background: rgba(220,38,38,.1); color: var(--err); }
+.my-item .tag.ok { background: rgba(22,163,74,.1); color: #16a34a; }
+.my-item .act { display: flex; gap: 6px; }
+.my-item .act button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 8px; padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--text); }
+.my-item .act button:hover { border-color: var(--primary); color: var(--primary); }
+.my-item .act button.danger:hover { border-color: var(--err); color: var(--err); }
+.my-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 28px 0; }
+/* 通知条目 */
+.notif-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.notif-item.unread { border-color: var(--primary); background: rgba(59,130,246,.05); }
+.notif-item .n-t { font-size: 13px; font-weight: 500; }
+.notif-item .n-b { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.notif-item .n-m { color: var(--muted); font-size: 11px; margin-top: 4px; }
+/* suggest 快捷入口按钮（Agent 引导） */
+.suggest-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.suggest-row button { border: 1px dashed var(--primary); color: var(--primary); background: rgba(59,130,246,.06); border-radius: 8px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
+.suggest-row button:hover { background: var(--primary); color: #fff; }
+/* 侧边栏我的按钮角标 */
+.badge-dot { position: absolute; top: -3px; right: -3px; background: var(--err); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 4px; line-height: 14px; }
+.me-wrap { position: relative; }
 </style>
 </head>
 <body>
@@ -351,6 +389,10 @@
     <div id="convList"></div>
     <div class="me">
       <span class="name" id="meName"></span>
+      <span class="me-wrap">
+        <button class="report" id="myBtn" title="我的（借阅/罚款/预约/消息）">👤</button>
+        <span class="badge-dot" id="notifBadge" style="display:none">0</span>
+      </span>
       <button class="report" id="seatBtn" title="座位预约">🪑</button>
       <button class="report" id="gateBtn" title="门禁状态">🚪</button>
       <button class="report" id="reportBtn" title="我的阅读报告">📊</button>
@@ -399,7 +441,125 @@
   </div>
 </div>
 
-<script src="vendor/marked.min.js"></script>
+<script src="vendor/marked.min.js">
+/* ---------- 客户端-代理融合：Agent 快捷入口 ---------- */
+function renderSuggest(label, panel) {
+  const row = document.createElement("div");
+  row.className = "suggest-row";
+  const btn = document.createElement("button");
+  btn.textContent = "🔗 " + label;
+  btn.onclick = () => openPanel(panel);
+  row.appendChild(btn);
+  chat.appendChild(row);
+  scrollBottom();
+}
+
+/* ---------- 我的面板（客户端自主操作：续借/还书/取消预约/消息） ---------- */
+const PANEL_TABS = {"my-loans":"loans","my-fines":"fines","my-holds":"holds","my-notifications":"notifications"};
+let myTab = "loans";
+function openPanel(panel) {
+  if (PANEL_TABS[panel]) { $("#myModal").classList.add("on"); switchMyTab(PANEL_TABS[panel]); return; }
+  if (panel === "seats") { $("#seatModal").classList.add("on"); loadSeats(); return; }
+  if (panel === "gate") { $("#gateModal").classList.add("on"); loadGateStatus(); return; }
+  if (panel === "report") { $("#reportBtn").click(); return; }
+  if (panel === "admin") { $("#adminBtn").click(); return; }
+}
+function switchMyTab(tab) {
+  myTab = tab;
+  document.querySelectorAll("#myTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  if (tab === "loans") loadMyLoans();
+  else if (tab === "fines") loadMyFines();
+  else if (tab === "holds") loadMyHolds();
+  else if (tab === "notifications") loadMyNotifications();
+}
+async function loadMyLoans() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const loans = await api("/api/patrons/" + pid + "/loans");
+    const today = new Date().toISOString().slice(0, 10);
+    const active = loans.filter(l => l.status === "active");
+    if (!active.length) { el.innerHTML = '<div class="my-empty">📖 当前没有在借图书</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + active.map(l => {
+      const overdue = l.due_date < today;
+      return '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(l.title) + '》</div><div class="su">应还 ' + l.due_date + (l.renewals ? " · 已续借 " + l.renewals + " 次" : "") + '</div></div><span class="tag ' + (overdue ? "overdue" : "ok") + '">' + (overdue ? "逾期" : "在借") + '</span><div class="act"><button data-act="renew" data-id="' + l.id + '"' + (l.renewable ? "" : " disabled style='opacity:.4' title='" + escapeHtml(l.renew_msg || "不可续借") + "'") + '>续借</button><button data-act="return" data-id="' + l.id + '" class="danger">还书</button></div></div>';
+    }).join("") + '</div>';
+    bindMyActions();
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyFines() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const f = await api("/api/patrons/" + pid + "/fines");
+    const items = f.items.filter(x => !x.paid);
+    if (!items.length) { el.innerHTML = '<div class="my-empty">💰 暂无未缴罚款</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + items.map(x =>
+      '<div class="my-item"><div class="t"><div class="ti">逾期罚款 ¥' + (x.amount_cents / 100).toFixed(1) + '</div><div class="su">产生于 ' + x.created_date + '</div></div><span class="tag overdue">未缴</span></div>'
+    ).join("") + '</div><div style="margin-top:12px;font-size:13px;color:var(--err)">合计未缴：¥' + (f.unpaid_cents / 100).toFixed(1) + '，请到服务台缴清</div>';
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyHolds() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const holds = await api("/api/patrons/" + pid + "/holds");
+    const active = holds.filter(h => h.status === "waiting" || h.status === "fulfilled");
+    if (!active.length) { el.innerHTML = '<div class="my-empty">📌 暂无进行中的预约</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + active.map(h =>
+      '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(h.title || "预约 #" + h.id) + '》</div><div class="su">' + (h.status === "fulfilled" ? "已到书，请尽快到馆取书" : "排队第 " + h.queue_pos + " 位 · " + h.created_at) + '</div></div><span class="tag ' + (h.status === "fulfilled" ? "ok" : "") + '">' + (h.status === "fulfilled" ? "可到馆取书" : "等待中") + '</span>' + (h.status === "waiting" ? '<div class="act"><button data-act="cancel" data-id="' + h.id + '" class="danger">取消</button></div>' : "") + '</div>'
+    ).join("") + '</div>';
+    bindMyActions();
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyNotifications() {
+  const el = $("#myPanel");
+  try {
+    const v = await api("/api/me/notifications");
+    if (!v.items.length) { el.innerHTML = '<div class="my-empty">🔔 暂无消息</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + v.items.map(n =>
+      '<div class="notif-item ' + (n.read ? "" : "unread") + '"><div class="n-t">' + escapeHtml(n.title) + '</div><div class="n-b">' + escapeHtml(n.body) + '</div><div class="n-m">' + n.created_at + '</div></div>'
+    ).join("") + '</div><button id="readAllBtn" style="margin-top:12px;width:100%;padding:8px;border:1px solid var(--border);background:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px">全部标为已读</button>';
+    $("#readAllBtn").onclick = async () => { await api("/api/me/notifications/read", { method: "POST", body: "{}" }); loadMyNotifications(); loadNotifBadge(); };
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+function bindMyActions() {
+  document.querySelectorAll("#myPanel [data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      try {
+        if (btn.dataset.act === "renew") {
+          await api("/api/loans/" + id + "/renew", { method: "POST", body: "{}" });
+          toast("✅ 续借成功");
+        } else if (btn.dataset.act === "return") {
+          const r = await api("/api/loans/" + id + "/return", { method: "POST", body: "{}" });
+          toast("✅ 已还书" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : ""));
+        } else if (btn.dataset.act === "cancel") {
+          await api("/api/holds/" + id + "/cancel", { method: "POST", body: "{}" });
+          toast("✅ 预约已取消");
+        }
+        loadMyLoans(); loadMyFines(); loadMyHolds(); loadNotifBadge();
+      } catch (e) { toast("❌ " + e.message); }
+    };
+  });
+}
+async function loadNotifBadge() {
+  try {
+    const v = await api("/api/me/notifications");
+    const b = $("#notifBadge"), tb = $("#notifTabBadge");
+    if (v.unread > 0) { b.textContent = v.unread; b.style.display = ""; tb.textContent = v.unread; tb.style.display = ""; }
+    else { b.style.display = "none"; tb.style.display = "none"; }
+  } catch (e) { /* 未登录或接口异常时静默 */ }
+}
+$("#myBtn").onclick = () => { $("#myModal").classList.add("on"); switchMyTab(myTab); loadNotifBadge(); };
+$("#myClose").onclick = () => { $("#myModal").classList.remove("on"); };
+$("#myModal").onclick = e => { if (e.target.id === "myModal") $("#myModal").classList.remove("on"); };
+document.querySelectorAll("#myTabs button").forEach(b => b.onclick = () => switchMyTab(b.dataset.tab));
+// 登录成功后刷新未读角标
+const _origPostLogin = postLogin || function(){};
+postLogin = function(d) { const r = _origPostLogin(d); loadNotifBadge(); return r; };
+
+</script>
 <script src="vendor/purify.min.js"></script>
 <div id="reportModal"><div class="box">
   <button class="close" id="reportClose">✕</button>
@@ -778,6 +938,9 @@ async function send() {
           if (data.mock) card.querySelector(".tstate").textContent = "演示模式";
           break;
         }
+        case "suggest":
+          renderSuggest(data.label || "前往办理", data.panel);
+          break;
         case "tool_result": {
           const card = toolCards[data.id];
           if (card) {
@@ -1118,5 +1281,18 @@ function toast(msg) {
 /* ---------- 启动 ---------- */
 if (token) initApp(); else showAuth();
 </script>
+<div id="myModal"><div class="box">
+  <button class="close" id="myClose">✕</button>
+  <h2>👤 我的图书馆</h2>
+  <div class="sub">自主办理：续借 / 还书 / 取消预约 / 查看消息</div>
+  <div id="myTabs">
+    <button data-tab="loans" class="on">📖 在借</button>
+    <button data-tab="fines">💰 罚款</button>
+    <button data-tab="holds">📌 预约</button>
+    <button data-tab="notifications">🔔 消息<span class="bd" id="notifTabBadge" style="display:none">0</span></button>
+  </div>
+  <div id="myPanel"></div>
+</div></div>
+
 </body>
 </html>
