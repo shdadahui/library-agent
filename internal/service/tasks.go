@@ -11,7 +11,7 @@ import (
 // 规则：今天到期 → 提醒；已逾期 → 逾期提醒。
 func (s *Service) RunDueLoansTask(stop <-chan struct{}) {
 	go func() {
-		s.checkDueLoans()
+		s.CheckDueLoansNow()
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -19,14 +19,15 @@ func (s *Service) RunDueLoansTask(stop <-chan struct{}) {
 			case <-stop:
 				return
 			case <-ticker.C:
-				s.checkDueLoans()
+				s.CheckDueLoansNow()
 			}
 		}
 	}()
 	log.Println("到期提醒任务已启动（每小时检查）")
 }
 
-func (s *Service) checkDueLoans() {
+// CheckDueLoansNow 立即执行一次到期/逾期提醒扫描（供任务循环与测试调用）。
+func (s *Service) CheckDueLoansNow() {
 	today := store.Now()
 	due, err := s.st.DueLoans(today)
 	if err != nil {

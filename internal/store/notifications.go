@@ -24,7 +24,7 @@ func (s *Store) CreateNotification(n *Notification) (int64, error) {
 
 // ListNotifications 读者通知列表（最新在前）。
 func (s *Store) ListNotifications(patronID int64, limit int) ([]Notification, error) {
-	rows, err := s.DB.Query(`SELECT id,patron_id,type,title,body,is_read,created_at
+	rows, err := s.DB.Query(`SELECT id,patron_id,type,title,body,is_read,ref_id,created_at
 		FROM notifications WHERE patron_id=? ORDER BY id DESC LIMIT ?`, patronID, limit)
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (s *Store) ListNotifications(patronID int64, limit int) ([]Notification, er
 	out := []Notification{}
 	for rows.Next() {
 		var n Notification
-		if err := rows.Scan(&n.ID, &n.PatronID, &n.Type, &n.Title, &n.Body, &n.Read, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.PatronID, &n.Type, &n.Title, &n.Body, &n.Read, &n.RefID, &n.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, n)

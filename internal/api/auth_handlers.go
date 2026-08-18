@@ -108,6 +108,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.Svc.RecordLoginLog(user.ID, user.Username, clientIP(r), true) // 注册成功同样记审计
 	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "user": user})
 }
 
