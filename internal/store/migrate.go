@@ -52,6 +52,8 @@ var migrations = []migration{
 	{Version: 16, SQL: `CREATE INDEX idx_rate_biblio ON ratings(biblio_id)`, Desc: "评分按书目聚合索引"},
 	{Version: 17, SQL: `ALTER TABLE favorites MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键"},
 	{Version: 18, SQL: `ALTER TABLE ratings MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键"},
+	{Version: 19, SQL: `CREATE UNIQUE INDEX idx_fav_unique ON favorites(patron_id, biblio_id)`, Desc: "收藏唯一约束（防并发/重复收藏）"},
+	{Version: 20, SQL: `CREATE UNIQUE INDEX idx_rate_unique ON ratings(patron_id, biblio_id)`, Desc: "评分唯一约束（并发 upsert 只留一条）"},
 }
 
 type migration struct {

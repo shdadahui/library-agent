@@ -10,17 +10,16 @@ type Favorite struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// AddFavorite 收藏（已存在则忽略）。
+// AddFavorite 收藏（唯一约束保证幂等：重复收藏自动忽略）。
 func (s *Store) AddFavorite(patronID, biblioID int64) error {
+	if s.Driver == "mysql" {
+		_, err := s.DB.Exec(`INSERT IGNORE INTO favorites(patron_id,biblio_id,created_at) VALUES(?,?,?)`,
+			patronID, biblioID, NowDateTime())
+		return err
+	}
 	_, err := s.DB.Exec(`INSERT OR IGNORE INTO favorites(patron_id,biblio_id,created_at) VALUES(?,?,?)`,
 		patronID, biblioID, NowDateTime())
-	if err != nil {
-		// MySQL 兼容（无 INSERT OR IGNORE 的冲突处理）
-		_, err2 := s.DB.Exec(`INSERT IGNORE INTO favorites(patron_id,biblio_id,created_at) VALUES(?,?,?)`,
-			patronID, biblioID, NowDateTime())
-		return err2
-	}
-	return nil
+	return err
 }
 
 // RemoveFavorite 取消收藏。
@@ -66,13 +65,16 @@ func (s *Store) ListFavorites(patronID int64) ([]FavoriteBiblio, error) {
 	return out, rows.Err()
 }
 
-// RateBook 评分（upsert：同读者同书只保留最新评分）。
+// RateBook 评分（原子 upsert：唯一约束 + 冲突更新，并发安全，同读者同书只留一条）。
 func (s *Store) RateBook(patronID, biblioID int64, score int) error {
-	_, err := s.DB.Exec(`DELETE FROM ratings WHERE patron_id=? AND biblio_id=?`, patronID, biblioID)
-	if err != nil {
+	if s.Driver == "mysql" {
+		_, err := s.DB.Exec(`INSERT INTO ratings(patron_id,biblio_id,score,created_at) VALUES(?,?,?,?)
+			ON DUPLICATE KEY UPDATE score=VALUES(score), created_at=VALUES(created_at)`,
+			patronID, biblioID, score, NowDateTime())
 		return err
 	}
-	_, err = s.DB.Exec(`INSERT INTO ratings(patron_id,biblio_id,score,created_at) VALUES(?,?,?,?)`,
+	_, err := s.DB.Exec(`INSERT INTO ratings(patron_id,biblio_id,score,created_at) VALUES(?,?,?,?)
+		ON CONFLICT(patron_id,biblio_id) DO UPDATE SET score=excluded.score, created_at=excluded.created_at`,
 		patronID, biblioID, score, NowDateTime())
 	return err
 }

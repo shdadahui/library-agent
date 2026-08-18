@@ -63,6 +63,7 @@ func (s *Store) Checkin(loanID int64, checkinDate string) error {
 
 // RenewCheckout 续借（关旧开新）：
 // 旧记录在旧应还日闭合，新建一条从旧应还日顺延借期的记录，续借次数 +1。
+// CAS 原子：旧记录必须仍为 active 才闭合——并发续借只会成功一次，其余返回 ErrLoanNotActive。
 func (s *Store) RenewCheckout(oldLoanID int64, oldDueDate, newDueDate string, renewals int) (int64, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
@@ -74,10 +75,14 @@ func (s *Store) RenewCheckout(oldLoanID int64, oldDueDate, newDueDate string, re
 	if err := tx.QueryRow(`SELECT item_id,patron_id FROM loans WHERE id=?`, oldLoanID).Scan(&itemID, &patronID); err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(`UPDATE loans SET checkin_date=?, status='returned' WHERE id=?`, oldDueDate, oldLoanID); err != nil {
+	res, err := tx.Exec(`UPDATE loans SET checkin_date=?, status='returned' WHERE id=? AND status='active'`, oldDueDate, oldLoanID)
+	if err != nil {
 		return 0, err
 	}
-	res, err := tx.Exec(`INSERT INTO loans(item_id,patron_id,checkout_date,due_date,renewals,status) VALUES(?,?,?,?,?,'active')`,
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, ErrLoanNotActive // 已被并发续借/归还处理
+	}
+	res, err = tx.Exec(`INSERT INTO loans(item_id,patron_id,checkout_date,due_date,renewals,status) VALUES(?,?,?,?,?,'active')`,
 		itemID, patronID, oldDueDate, newDueDate, renewals)
 	if err != nil {
 		return 0, err
