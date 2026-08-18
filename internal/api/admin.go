@@ -251,3 +251,31 @@ func (s *Server) handleAdminUpdatePatron(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
+
+// handleAdminLoginLogs 登录审计日志（分页）。
+func (s *Server) handleAdminLoginLogs(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	res, err := s.Svc.AdminLoginLogs(page, size)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleAdminDashboard 仪表盘（趋势 + 热门分类）。
+func (s *Server) handleAdminDashboard(w http.ResponseWriter, r *http.Request) {
+	d, err := s.Svc.AdminDashboard()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}

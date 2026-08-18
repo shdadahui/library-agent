@@ -119,9 +119,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token, user, err := s.Auth.Login(body.Username, body.Password)
 	if err != nil {
+		s.Svc.RecordLoginLog(0, body.Username, clientIP(r), false)
 		writeErr(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+	s.Svc.RecordLoginLog(user.ID, user.Username, clientIP(r), true)
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "user": user})
 }
 

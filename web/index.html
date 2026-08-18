@@ -400,6 +400,32 @@
 #adminPanel .admin-table button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; cursor: pointer; color: var(--text); }
 #adminPanel .admin-table button:hover { border-color: var(--primary); color: var(--primary); }
 #adminPanel .admin-table button.danger:hover { border-color: var(--err); color: var(--err); }
+
+/* 仪表盘图表（零依赖 CSS bar） */
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+.dash-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.dash-box h4 { font-size: 12.5px; color: var(--muted); font-weight: 500; margin-bottom: 10px; }
+.bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 110px; padding-top: 4px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.bar-col .bar { width: 100%; background: var(--primary); border-radius: 3px 3px 0 0; opacity: .85; min-height: 1px; }
+.bar-col .bar.ret { background: #16a34a; opacity: .6; }
+.bar-col .lbl { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 100%; }
+.bar-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.bar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* 仪表盘图表（零依赖 CSS bar） */
+.dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+.dash-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.dash-box h4 { font-size: 12.5px; color: var(--muted); font-weight: 500; margin-bottom: 10px; }
+.bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 110px; padding-top: 4px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.bar-col .bar { width: 100%; background: var(--primary); border-radius: 3px 3px 0 0; opacity: .85; min-height: 1px; }
+.bar-col .bar.ret { background: #16a34a; opacity: .6; }
+.bar-col .lbl { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 100%; }
+.bar-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.bar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 </style>
 </head>
 <body>
@@ -461,9 +487,14 @@
     <button data-atab="loans">📖 借阅</button>
     <button data-atab="patrons">👥 读者</button>
     <button data-atab="workbench">🛠 工作台</button>
+            <button data-atab="logs">🔐 日志</button>
   </div>
   <div id="adminOverview">
     <div class="admin-section"><h3>📊 运营总览</h3><div class="admin-stat" id="adminStats"></div></div>
+      <div class="dash-grid">
+        <div class="dash-box"><h4>📈 近 14 日借阅趋势</h4><div class="bar-chart" id="dashTrend"></div></div>
+        <div class="dash-box"><h4>🔥 热门分类（按借出次数）</h4><div class="bar-chart" id="dashCats"></div></div>
+      </div>
     <div class="admin-section"><h3>👥 读者列表</h3>
       <table class="admin-table" id="adminUsers"><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>在借</th><th>电话</th></tr></thead><tbody></tbody></table>
     </div>
@@ -496,6 +527,12 @@
       </div>
     </div>
   </div>
+          <div id="adminLogs" style="display:none">
+            <div class="admin-section"><h3>🔐 登录日志</h3>
+              <table class="admin-table"><thead><tr><th>ID</th><th>用户</th><th>IP</th><th>结果</th><th>时间</th></tr></thead><tbody id="llTbody"></tbody></table>
+              <div class="adm-pager" id="llPager"></div>
+            </div>
+          </div>
 </div>
       </div>
     </div>
@@ -1558,5 +1595,66 @@ $("#alStatus").onchange = () => loadAdminLoans(1, $("#alStatus").value, $("#alSe
 $("#alExportBtn").onclick = exportLoansCSV;
 
 </script>
+<script>
+
+/* ---------- P1：仪表盘图表 + 登录日志 ---------- */
+let llPage = 1;
+function barChart(el, data, max, color, labelFn) {
+  const m = max || Math.max(1, ...data.map(d => d.v));
+  el.innerHTML = data.map(d => {
+    const h = Math.max(2, Math.round(d.v / m * 100));
+    return '<div class="bar-col"><div class="bar ' + (color === "ret" ? "ret" : "") + '" style="height:' + h + 'px"></div><div class="lbl" title="' + escapeHtml(d.l) + '">' + escapeHtml(labelFn ? labelFn(d.l) : d.l) + '</div></div>';
+  }).join("");
+}
+async function loadAdminDashboard() {
+  try {
+    const d = await api("/api/admin/dashboard");
+    const trend = d.trend.map(t => ({ l: t.date.slice(5), v: t.checkout }));
+    const rets = d.trend.map(t => ({ l: t.date.slice(5), v: t.return }));
+    const max = Math.max(1, ...d.trend.map(t => Math.max(t.checkout, t.return)));
+    const trendEl = $("#dashTrend");
+    trendEl.innerHTML = '<div class="bar-chart">' + d.trend.map(t => {
+      const c = Math.max(2, Math.round(t.checkout / max * 100));
+      const r = Math.max(2, Math.round(t.return / max * 100));
+      return '<div class="bar-col"><div class="bar" style="height:' + c + 'px"></div><div class="bar ret" style="height:' + r + 'px"></div><div class="lbl">' + t.date.slice(5) + '</div></div>';
+    }).join("") + '</div><div class="bar-legend"><span><i style="background:var(--primary)"></i>借出</span><span><i style="background:#16a34a"></i>归还</span></div>';
+    const cats = d.top_categories;
+    const cmax = Math.max(1, ...cats.map(c => c.count));
+    $("#dashCats").innerHTML = '<div class="bar-chart">' + cats.map(c => {
+      const h = Math.max(2, Math.round(c.count / cmax * 100));
+      return '<div class="bar-col"><div class="bar" style="height:' + h + 'px"></div><div class="lbl" title="' + escapeHtml(c.category) + '">' + escapeHtml(c.category) + '</div></div>';
+    }).join("") + '</div>';
+  } catch (e) {}
+}
+let llPage2 = 1;
+async function loadAdminLogs(page) {
+  llPage2 = page;
+  const el = $("#llTbody");
+  try {
+    const d = await api("/api/admin/login-logs?page=" + page + "&size=20");
+    el.innerHTML = d.items.map(l =>
+      '<tr><td>' + l.id + '</td><td>' + escapeHtml(l.username) + '</td><td>' + escapeHtml(l.ip) + '</td><td>' + (l.success ? '<span class="tag ok">成功</span>' : '<span class="tag overdue">失败</span>') + '</td><td>' + l.created_at + '</td></tr>'
+    ).join("");
+    $("#llPager").outerHTML = admPager(d.total, d.pages, d.page, "loadAdminLogs");
+  } catch (e) { el.innerHTML = '<tr><td colspan="5">加载失败</td></tr>'; }
+}
+// switchAdminTab 扩展 logs + dashboard
+const _origSwitch = switchAdminTab;
+switchAdminTab = function(tab) {
+  adminTab = tab;
+  document.querySelectorAll("#adminPanel .admin-tabs button").forEach(b => b.classList.toggle("on", b.dataset.atab === tab));
+  ["adminOverview","adminBooks","adminLoans","adminPatrons","adminWorkbench","adminLogs"].forEach(id => {
+    const show = id === "admin" + tab[0].toUpperCase() + tab.slice(1);
+    $("#" + id).style.display = show ? "" : "none";
+  });
+  if (tab === "books") loadAdminBooks(abPage, abQ);
+  else if (tab === "loans") loadAdminLoans(alPage, alStatus, alQ);
+  else if (tab === "patrons") loadAdminPatrons();
+  else if (tab === "overview") { loadAdminOverview(); loadAdminDashboard(); }
+  else if (tab === "logs") loadAdminLogs(1);
+};
+
+</script>
+
 </body>
 </html>

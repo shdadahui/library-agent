@@ -148,6 +148,8 @@ func (s *Server) routes() {
 	m.Handle("DELETE /api/admin/items/{id}", requireAdmin(http.HandlerFunc(s.handleAdminDeleteItem)))
 	m.Handle("GET /api/admin/loans", requireAdmin(http.HandlerFunc(s.handleAdminLoans)))
 	m.Handle("PUT /api/admin/patrons/{id}", requireAdmin(http.HandlerFunc(s.handleAdminUpdatePatron)))
+	m.Handle("GET /api/admin/login-logs", requireAdmin(http.HandlerFunc(s.handleAdminLoginLogs)))
+	m.Handle("GET /api/admin/dashboard", requireAdmin(http.HandlerFunc(s.handleAdminDashboard)))
 	m.Handle("GET /api/admin/stats", requireAdmin(http.HandlerFunc(s.handleAdminStats)))
 	m.Handle("POST /api/admin/checkout", requireAdmin(http.HandlerFunc(s.handleAdminCheckout)))
 	m.Handle("POST /api/admin/return", requireAdmin(http.HandlerFunc(s.handleAdminReturn)))

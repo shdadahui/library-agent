@@ -22,12 +22,26 @@ var migrations = []migration{
 	)`, Desc: "系统通知表（预约到书/逾期提醒）"},
 	{Version: 4, SQL: `CREATE INDEX idx_notif_patron ON notifications(patron_id, is_read)`, Desc: "通知查询索引（MySQL 不支持 IF NOT EXISTS；重复索引由容错逻辑视为已完成）"},
 	{Version: 6, SQL: `ALTER TABLE patrons ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'`, Desc: "读者状态（active/disabled 禁用）"},
+	{Version: 7, SQL: `ALTER TABLE notifications ADD COLUMN ref_id INTEGER NOT NULL DEFAULT 0`, Desc: "通知业务引用（到期提醒=loan_id，去重用）"},
+	{Version: 8, SQL: `CREATE TABLE IF NOT EXISTS login_logs(
+		id INTEGER PRIMARY KEY,
+		user_id INTEGER NOT NULL DEFAULT 0,
+		username VARCHAR(64) NOT NULL DEFAULT '',
+		ip VARCHAR(64) NOT NULL DEFAULT '',
+		success INTEGER NOT NULL DEFAULT 0,
+		created_at VARCHAR(32) NOT NULL
+	)`, Desc: "登录审计日志"},
+	{Version: 9, SQL: `CREATE INDEX idx_loginlog_time ON login_logs(created_at)`, Desc: "登录日志时间索引"},
+	{Version: 10, SQL: `ALTER TABLE notifications MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键（迁移建表缺 AUTO_INCREMENT，插入静默失败）"},
+	{Version: 11, SQL: `ALTER TABLE login_logs MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键（同上）"},
 }
 
 type migration struct {
 	Version int
 	SQL     string
 	Desc    string
+	// Driver 限定执行的数据库驱动（""=两者都执行；"mysql"/"sqlite"=仅该驱动）
+	Driver string
 }
 
 // runMigrations 执行未记录的迁移；已存在的列/索引视为已完成（兼容历史库）。
@@ -40,6 +54,10 @@ func (s *Store) runMigrations() error {
 		return fmt.Errorf("建迁移表失败: %w", err)
 	}
 	for _, m := range migrations {
+		// 驱动限定：仅目标驱动的迁移才执行（如 MySQL 补自增主键）
+		if m.Driver != "" && m.Driver != s.Driver {
+			continue
+		}
 		var n int
 		if err := s.DB.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version=?`, m.Version).Scan(&n); err != nil {
 			return err

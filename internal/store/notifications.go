@@ -8,13 +8,14 @@ type Notification struct {
 	Title     string `json:"title"` // 短标题
 	Body      string `json:"body"`
 	Read      bool   `json:"read"`
+	RefID     int64  `json:"ref_id"` // 业务引用（到期提醒=loan_id，去重用）
 	CreatedAt string `json:"created_at"`
 }
 
 // CreateNotification 创建一条通知。
 func (s *Store) CreateNotification(n *Notification) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO notifications(patron_id,type,title,body,is_read,created_at)
-		VALUES(?,?,?,?,0,?)`, n.PatronID, n.Type, n.Title, n.Body, n.CreatedAt)
+	res, err := s.DB.Exec(`INSERT INTO notifications(patron_id,type,title,body,is_read,ref_id,created_at)
+		VALUES(?,?,?,?,0,?,?)`, n.PatronID, n.Type, n.Title, n.Body, n.RefID, n.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
