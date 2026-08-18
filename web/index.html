@@ -479,161 +479,7 @@
   </div>
 </div>
 
-<script src="vendor/marked.min.js">
-/* ---------- 客户端-代理融合：Agent 快捷入口 ---------- */
-function renderSuggest(label, panel) {
-  const row = document.createElement("div");
-  row.className = "suggest-row";
-  const btn = document.createElement("button");
-  btn.textContent = "🔗 " + label;
-  btn.onclick = () => openPanel(panel);
-  row.appendChild(btn);
-  chat.appendChild(row);
-  scrollBottom();
-}
-
-/* ---------- 我的面板（客户端自主操作：续借/还书/取消预约/消息） ---------- */
-const PANEL_TABS = {"my-loans":"loans","my-fines":"fines","my-holds":"holds","my-notifications":"notifications"};
-let myTab = "loans";
-function openPanel(panel) {
-  if (PANEL_TABS[panel]) { $("#myModal").classList.add("on"); switchMyTab(PANEL_TABS[panel]); return; }
-  if (panel === "seats") { $("#seatModal").classList.add("on"); loadSeats(); return; }
-  if (panel === "gate") { $("#gateModal").classList.add("on"); loadGateStatus(); return; }
-  if (panel === "report") { $("#reportBtn").click(); return; }
-  if (panel === "admin") { $("#adminBtn").click(); return; }
-}
-function switchMyTab(tab) {
-  myTab = tab;
-  document.querySelectorAll("#myTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
-  if (tab === "loans") loadMyLoans();
-  else if (tab === "fines") loadMyFines();
-  else if (tab === "holds") loadMyHolds();
-  else if (tab === "notifications") loadMyNotifications();
-}
-async function loadMyLoans() {
-  const el = $("#myPanel");
-  try {
-    const pid = currentUser.PatronID;
-    const loans = await api("/api/patrons/" + pid + "/loans");
-    const today = new Date().toISOString().slice(0, 10);
-    const active = loans.filter(l => l.status === "active");
-    if (!active.length) { el.innerHTML = '<div class="my-empty">📖 当前没有在借图书</div>'; return; }
-    el.innerHTML = '<div class="my-list">' + active.map(l => {
-      const overdue = l.due_date < today;
-      return '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(l.title) + '》</div><div class="su">应还 ' + l.due_date + (l.renewals ? " · 已续借 " + l.renewals + " 次" : "") + '</div></div><span class="tag ' + (overdue ? "overdue" : "ok") + '">' + (overdue ? "逾期" : "在借") + '</span><div class="act"><button data-act="renew" data-id="' + l.id + '"' + (l.renewable ? "" : " disabled style='opacity:.4' title='" + escapeHtml(l.renew_msg || "不可续借") + "'") + '>续借</button><button data-act="return" data-id="' + l.id + '" class="danger">还书</button></div></div>';
-    }).join("") + '</div>';
-    bindMyActions();
-  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
-}
-async function loadMyFines() {
-  const el = $("#myPanel");
-  try {
-    const pid = currentUser.PatronID;
-    const f = await api("/api/patrons/" + pid + "/fines");
-    const items = f.items.filter(x => !x.paid);
-    if (!items.length) { el.innerHTML = '<div class="my-empty">💰 暂无未缴罚款</div>'; return; }
-    el.innerHTML = '<div class="my-list">' + items.map(x =>
-      '<div class="my-item"><div class="t"><div class="ti">逾期罚款 ¥' + (x.amount_cents / 100).toFixed(1) + '</div><div class="su">产生于 ' + x.created_date + '</div></div><span class="tag overdue">未缴</span></div>'
-    ).join("") + '</div><div style="margin-top:12px;font-size:13px;color:var(--err)">合计未缴：¥' + (f.unpaid_cents / 100).toFixed(1) + '，请到服务台缴清</div>';
-  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
-}
-async function loadMyHolds() {
-  const el = $("#myPanel");
-  try {
-    const pid = currentUser.PatronID;
-    const holds = await api("/api/patrons/" + pid + "/holds");
-    const active = holds.filter(h => h.status === "waiting" || h.status === "fulfilled");
-    if (!active.length) { el.innerHTML = '<div class="my-empty">📌 暂无进行中的预约</div>'; return; }
-    el.innerHTML = '<div class="my-list">' + active.map(h =>
-      '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(h.title || "预约 #" + h.id) + '》</div><div class="su">' + (h.status === "fulfilled" ? "已到书，请尽快到馆取书" : "排队第 " + h.queue_pos + " 位 · " + h.created_at) + '</div></div><span class="tag ' + (h.status === "fulfilled" ? "ok" : "") + '">' + (h.status === "fulfilled" ? "可到馆取书" : "等待中") + '</span>' + (h.status === "waiting" ? '<div class="act"><button data-act="cancel" data-id="' + h.id + '" class="danger">取消</button></div>' : "") + '</div>'
-    ).join("") + '</div>';
-    bindMyActions();
-  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
-}
-async function loadMyNotifications() {
-  const el = $("#myPanel");
-  try {
-    const v = await api("/api/me/notifications");
-    if (!v.items.length) { el.innerHTML = '<div class="my-empty">🔔 暂无消息</div>'; return; }
-    el.innerHTML = '<div class="my-list">' + v.items.map(n =>
-      '<div class="notif-item ' + (n.read ? "" : "unread") + '"><div class="n-t">' + escapeHtml(n.title) + '</div><div class="n-b">' + escapeHtml(n.body) + '</div><div class="n-m">' + n.created_at + '</div></div>'
-    ).join("") + '</div><button id="readAllBtn" style="margin-top:12px;width:100%;padding:8px;border:1px solid var(--border);background:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px">全部标为已读</button>';
-    $("#readAllBtn").onclick = async () => { await api("/api/me/notifications/read", { method: "POST", body: "{}" }); loadMyNotifications(); loadNotifBadge(); };
-  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
-}
-function bindMyActions() {
-  document.querySelectorAll("#myPanel [data-act]").forEach(btn => {
-    btn.onclick = async () => {
-      const id = btn.dataset.id;
-      try {
-        if (btn.dataset.act === "renew") {
-          await api("/api/loans/" + id + "/renew", { method: "POST", body: "{}" });
-          toast("✅ 续借成功");
-        } else if (btn.dataset.act === "return") {
-          const r = await api("/api/loans/" + id + "/return", { method: "POST", body: "{}" });
-          toast("✅ 已还书" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : ""));
-        } else if (btn.dataset.act === "cancel") {
-          await api("/api/holds/" + id + "/cancel", { method: "POST", body: "{}" });
-          toast("✅ 预约已取消");
-        }
-        loadMyLoans(); loadMyFines(); loadMyHolds(); loadNotifBadge();
-      } catch (e) { toast("❌ " + e.message); }
-    };
-  });
-}
-async function loadNotifBadge() {
-  try {
-    const v = await api("/api/me/notifications");
-    const b = $("#notifBadge"), tb = $("#notifTabBadge");
-    if (v.unread > 0) { b.textContent = v.unread; b.style.display = ""; tb.textContent = v.unread; tb.style.display = ""; }
-    else { b.style.display = "none"; tb.style.display = "none"; }
-  } catch (e) { /* 未登录或接口异常时静默 */ }
-}
-$("#myBtn").onclick = () => { $("#myModal").classList.add("on"); switchMyTab(myTab); loadNotifBadge(); };
-$("#myClose").onclick = () => { $("#myModal").classList.remove("on"); };
-$("#myModal").onclick = e => { if (e.target.id === "myModal") $("#myModal").classList.remove("on"); };
-document.querySelectorAll("#myTabs button").forEach(b => b.onclick = () => switchMyTab(b.dataset.tab));
-// 登录成功后刷新未读角标
-const _origPostLogin = postLogin || function(){};
-postLogin = function(d) { const r = _origPostLogin(d); loadNotifBadge(); return r; };
-
-
-/* ---------- 馆员工作台（借书系统配套） ---------- */
-function acMsg(id, text, ok) {
-  const el = $(id);
-  el.textContent = text;
-  el.className = "ac-msg " + (ok ? "ok" : (text ? "err" : ""));
-}
-async function adminApi(url, body) {
-  return api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-}
-$("#coBtn").onclick = async () => {
-  try {
-    const r = await adminApi("/api/admin/checkout", { patron_barcode: $("#coPatron").value.trim(), item_barcode: $("#coItem").value.trim() });
-    acMsg("#coMsg", "✅ 借出成功：应还 " + r.loan.due_date, true);
-    $("#coPatron").value = ""; $("#coItem").value = "";
-    loadAdminPanel();
-  } catch (e) { acMsg("#coMsg", "❌ " + e.message, false); }
-};
-$("#rtBtn").onclick = async () => {
-  try {
-    const r = await adminApi("/api/admin/return", { item_barcode: $("#rtItem").value.trim() });
-    acMsg("#rtMsg", "✅ 归还成功" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : "") + (r.hold_wake_up ? "，" + r.hold_wake_up : ""), true);
-    $("#rtItem").value = "";
-    loadAdminPanel();
-  } catch (e) { acMsg("#rtMsg", "❌ " + e.message, false); }
-};
-$("#abBtn").onclick = async () => {
-  try {
-    const r = await adminApi("/api/admin/books", { title: $("#abTitle").value.trim(), author: $("#abAuthor").value.trim(), subjects: $("#abSubjects").value.trim(), copies: parseInt($("#abCopies").value || "1", 10) });
-    acMsg("#abMsg", "✅ 《" + r.title + "》已入库（ID " + r.id + "）", true);
-    $("#abTitle").value = ""; $("#abAuthor").value = ""; $("#abSubjects").value = "";
-    loadAdminPanel();
-  } catch (e) { acMsg("#abMsg", "❌ " + e.message, false); }
-};
-function loadAdminPanel() { $("#adminBtn").click(); $("#adminBtn").click(); }
-
-</script>
+<script src="vendor/marked.min.js"></script>
 <script src="vendor/purify.min.js"></script>
 <div id="reportModal"><div class="box">
   <button class="close" id="reportClose">✕</button>
@@ -1354,6 +1200,22 @@ function toast(msg) {
 
 /* ---------- 启动 ---------- */
 if (token) initApp(); else showAuth();
+
+
+/* ---------- 客户端-代理融合：Agent 快捷入口 ---------- */
+function renderSuggest(label, panel) {
+  const row = document.createElement("div");
+  row.className = "suggest-row";
+  const btn = document.createElement("button");
+  btn.textContent = "🔗 " + label;
+  btn.onclick = () => openPanel(panel);
+  row.appendChild(btn);
+  chat.appendChild(row);
+  scrollBottom();
+}
+
+// 运行时错误捕获（调试）
+window.addEventListener('error', e => { const d=document.createElement('div'); d.id='__err'; d.style.cssText='position:fixed;top:0;left:0;right:0;background:#fee;color:#c00;padding:6px;z-index:9999;font:12px monospace;white-space:pre-wrap'; d.textContent='JS ERR: '+e.message+' @ '+e.filename+':'+e.lineno; document.body.appendChild(d); });
 </script>
 <div id="myModal"><div class="box">
   <button class="close" id="myClose">✕</button>
@@ -1368,5 +1230,148 @@ if (token) initApp(); else showAuth();
   <div id="myPanel"></div>
 </div></div>
 
+<script>
+/* ---------- 我的面板（客户端自主操作：续借/还书/取消预约/消息） ---------- */
+const PANEL_TABS = {"my-loans":"loans","my-fines":"fines","my-holds":"holds","my-notifications":"notifications"};
+let myTab = "loans";
+function openPanel(panel) {
+  if (PANEL_TABS[panel]) { $("#myModal").classList.add("on"); switchMyTab(PANEL_TABS[panel]); return; }
+  if (panel === "seats") { $("#seatModal").classList.add("on"); loadSeats(); return; }
+  if (panel === "gate") { $("#gateModal").classList.add("on"); loadGateStatus(); return; }
+  if (panel === "report") { $("#reportBtn").click(); return; }
+  if (panel === "admin") { $("#adminBtn").click(); return; }
+}
+function switchMyTab(tab) {
+  myTab = tab;
+  document.querySelectorAll("#myTabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  if (tab === "loans") loadMyLoans();
+  else if (tab === "fines") loadMyFines();
+  else if (tab === "holds") loadMyHolds();
+  else if (tab === "notifications") loadMyNotifications();
+}
+async function loadMyLoans() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const loans = await api("/api/patrons/" + pid + "/loans");
+    const today = new Date().toISOString().slice(0, 10);
+    const active = loans.filter(l => l.status === "active");
+    if (!active.length) { el.innerHTML = '<div class="my-empty">📖 当前没有在借图书</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + active.map(l => {
+      const overdue = l.due_date < today;
+      return '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(l.title) + '》</div><div class="su">应还 ' + l.due_date + (l.renewals ? " · 已续借 " + l.renewals + " 次" : "") + '</div></div><span class="tag ' + (overdue ? "overdue" : "ok") + '">' + (overdue ? "逾期" : "在借") + '</span><div class="act"><button data-act="renew" data-id="' + l.id + '"' + (l.renewable ? "" : " disabled style='opacity:.4' title='" + escapeHtml(l.renew_msg || "不可续借") + "'") + '>续借</button><button data-act="return" data-id="' + l.id + '" class="danger">还书</button></div></div>';
+    }).join("") + '</div>';
+    bindMyActions();
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyFines() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const f = await api("/api/patrons/" + pid + "/fines");
+    const items = f.items.filter(x => !x.paid);
+    if (!items.length) { el.innerHTML = '<div class="my-empty">💰 暂无未缴罚款</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + items.map(x =>
+      '<div class="my-item"><div class="t"><div class="ti">逾期罚款 ¥' + (x.amount_cents / 100).toFixed(1) + '</div><div class="su">产生于 ' + x.created_date + '</div></div><span class="tag overdue">未缴</span></div>'
+    ).join("") + '</div><div style="margin-top:12px;font-size:13px;color:var(--err)">合计未缴：¥' + (f.unpaid_cents / 100).toFixed(1) + '，请到服务台缴清</div>';
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyHolds() {
+  const el = $("#myPanel");
+  try {
+    const pid = currentUser.PatronID;
+    const holds = await api("/api/patrons/" + pid + "/holds");
+    const active = holds.filter(h => h.status === "waiting" || h.status === "fulfilled");
+    if (!active.length) { el.innerHTML = '<div class="my-empty">📌 暂无进行中的预约</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + active.map(h =>
+      '<div class="my-item"><div class="t"><div class="ti">《' + escapeHtml(h.title || "预约 #" + h.id) + '》</div><div class="su">' + (h.status === "fulfilled" ? "已到书，请尽快到馆取书" : "排队第 " + h.queue_pos + " 位 · " + h.created_at) + '</div></div><span class="tag ' + (h.status === "fulfilled" ? "ok" : "") + '">' + (h.status === "fulfilled" ? "可到馆取书" : "等待中") + '</span>' + (h.status === "waiting" ? '<div class="act"><button data-act="cancel" data-id="' + h.id + '" class="danger">取消</button></div>' : "") + '</div>'
+    ).join("") + '</div>';
+    bindMyActions();
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+async function loadMyNotifications() {
+  const el = $("#myPanel");
+  try {
+    const v = await api("/api/me/notifications");
+    if (!v.items.length) { el.innerHTML = '<div class="my-empty">🔔 暂无消息</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + v.items.map(n =>
+      '<div class="notif-item ' + (n.read ? "" : "unread") + '"><div class="n-t">' + escapeHtml(n.title) + '</div><div class="n-b">' + escapeHtml(n.body) + '</div><div class="n-m">' + n.created_at + '</div></div>'
+    ).join("") + '</div><button id="readAllBtn" style="margin-top:12px;width:100%;padding:8px;border:1px solid var(--border);background:none;border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px">全部标为已读</button>';
+    $("#readAllBtn").onclick = async () => { await api("/api/me/notifications/read", { method: "POST", body: "{}" }); loadMyNotifications(); loadNotifBadge(); };
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+function bindMyActions() {
+  document.querySelectorAll("#myPanel [data-act]").forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      try {
+        if (btn.dataset.act === "renew") {
+          await api("/api/loans/" + id + "/renew", { method: "POST", body: "{}" });
+          toast("✅ 续借成功");
+        } else if (btn.dataset.act === "return") {
+          const r = await api("/api/loans/" + id + "/return", { method: "POST", body: "{}" });
+          toast("✅ 已还书" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : ""));
+        } else if (btn.dataset.act === "cancel") {
+          await api("/api/holds/" + id + "/cancel", { method: "POST", body: "{}" });
+          toast("✅ 预约已取消");
+        }
+        loadMyLoans(); loadMyFines(); loadMyHolds(); loadNotifBadge();
+      } catch (e) { toast("❌ " + e.message); }
+    };
+  });
+}
+async function loadNotifBadge() {
+  try {
+    const v = await api("/api/me/notifications");
+    const b = $("#notifBadge"), tb = $("#notifTabBadge");
+    if (v.unread > 0) { b.textContent = v.unread; b.style.display = ""; tb.textContent = v.unread; tb.style.display = ""; }
+    else { b.style.display = "none"; tb.style.display = "none"; }
+  } catch (e) { /* 未登录或接口异常时静默 */ }
+}
+$("#myBtn").onclick = () => { $("#myModal").classList.add("on"); switchMyTab(myTab); loadNotifBadge(); };
+$("#myClose").onclick = () => { $("#myModal").classList.remove("on"); };
+$("#myModal").onclick = e => { if (e.target.id === "myModal") $("#myModal").classList.remove("on"); };
+document.querySelectorAll("#myTabs button").forEach(b => b.onclick = () => switchMyTab(b.dataset.tab));
+// 注：登录后未读角标由登录回调路径自行刷新（postLogin 不存在，无包装）
+
+
+/* ---------- 馆员工作台（借书系统配套） ---------- */
+function acMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "ac-msg " + (ok ? "ok" : (text ? "err" : ""));
+}
+async function adminApi(url, body) {
+  return api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+$("#coBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/checkout", { patron_barcode: $("#coPatron").value.trim(), item_barcode: $("#coItem").value.trim() });
+    acMsg("#coMsg", "✅ 借出成功：应还 " + r.loan.due_date, true);
+    $("#coPatron").value = ""; $("#coItem").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#coMsg", "❌ " + e.message, false); }
+};
+$("#rtBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/return", { item_barcode: $("#rtItem").value.trim() });
+    acMsg("#rtMsg", "✅ 归还成功" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : "") + (r.hold_wake_up ? "，" + r.hold_wake_up : ""), true);
+    $("#rtItem").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#rtMsg", "❌ " + e.message, false); }
+};
+$("#abBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/books", { title: $("#abTitle").value.trim(), author: $("#abAuthor").value.trim(), subjects: $("#abSubjects").value.trim(), copies: parseInt($("#abCopies").value || "1", 10) });
+    acMsg("#abMsg", "✅ 《" + r.title + "》已入库（ID " + r.id + "）", true);
+    $("#abTitle").value = ""; $("#abAuthor").value = ""; $("#abSubjects").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#abMsg", "❌ " + e.message, false); }
+};
+function loadAdminPanel() { $("#adminBtn").click(); $("#adminBtn").click(); }
+
+
+
+</script>
 </body>
 </html>
