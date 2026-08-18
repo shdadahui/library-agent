@@ -628,7 +628,7 @@ async function initApp() {
     loadConversations();
     loadSuggestions();
     loadHotBooks();
-    if (currentUser.Role === "admin" || currentUser.Role === "admin") { $("#adminBtn").style.display = ""; }
+    if (currentUser.role === "admin") { $("#adminBtn").style.display = ""; }
     const h = await fetch("/api/health").then(r => r.json());
     $("#providerBadge").textContent = "LLM: " + (h.provider || "mock") + (h.provider === "mock" ? " · 演示模式" : "");
     input.focus();
@@ -1252,7 +1252,7 @@ function switchMyTab(tab) {
 async function loadMyLoans() {
   const el = $("#myPanel");
   try {
-    const pid = currentUser.PatronID;
+    const pid = currentUser.patron_id;
     const loans = await api("/api/patrons/" + pid + "/loans");
     const today = new Date().toISOString().slice(0, 10);
     const active = loans.filter(l => l.status === "active");
@@ -1267,7 +1267,7 @@ async function loadMyLoans() {
 async function loadMyFines() {
   const el = $("#myPanel");
   try {
-    const pid = currentUser.PatronID;
+    const pid = currentUser.patron_id;
     const f = await api("/api/patrons/" + pid + "/fines");
     const items = f.items.filter(x => !x.paid);
     if (!items.length) { el.innerHTML = '<div class="my-empty">💰 暂无未缴罚款</div>'; return; }
@@ -1279,7 +1279,7 @@ async function loadMyFines() {
 async function loadMyHolds() {
   const el = $("#myPanel");
   try {
-    const pid = currentUser.PatronID;
+    const pid = currentUser.patron_id;
     const holds = await api("/api/patrons/" + pid + "/holds");
     const active = holds.filter(h => h.status === "waiting" || h.status === "fulfilled");
     if (!active.length) { el.innerHTML = '<div class="my-empty">📌 暂无进行中的预约</div>'; return; }
