@@ -13,7 +13,7 @@ type Notification struct {
 
 // CreateNotification 创建一条通知。
 func (s *Store) CreateNotification(n *Notification) (int64, error) {
-	res, err := s.DB.Exec(`INSERT INTO notifications(patron_id,type,title,body,read,created_at)
+	res, err := s.DB.Exec(`INSERT INTO notifications(patron_id,type,title,body,is_read,created_at)
 		VALUES(?,?,?,?,0,?)`, n.PatronID, n.Type, n.Title, n.Body, n.CreatedAt)
 	if err != nil {
 		return 0, err
@@ -23,7 +23,7 @@ func (s *Store) CreateNotification(n *Notification) (int64, error) {
 
 // ListNotifications 读者通知列表（最新在前）。
 func (s *Store) ListNotifications(patronID int64, limit int) ([]Notification, error) {
-	rows, err := s.DB.Query(`SELECT id,patron_id,type,title,body,read,created_at
+	rows, err := s.DB.Query(`SELECT id,patron_id,type,title,body,is_read,created_at
 		FROM notifications WHERE patron_id=? ORDER BY id DESC LIMIT ?`, patronID, limit)
 	if err != nil {
 		return nil, err
@@ -43,12 +43,12 @@ func (s *Store) ListNotifications(patronID int64, limit int) ([]Notification, er
 // UnreadNotificationCount 未读通知数。
 func (s *Store) UnreadNotificationCount(patronID int64) (int, error) {
 	var n int
-	err := s.DB.QueryRow(`SELECT COUNT(*) FROM notifications WHERE patron_id=? AND read=0`, patronID).Scan(&n)
+	err := s.DB.QueryRow(`SELECT COUNT(*) FROM notifications WHERE patron_id=? AND is_read=0`, patronID).Scan(&n)
 	return n, err
 }
 
 // MarkAllNotificationsRead 全部标记已读。
 func (s *Store) MarkAllNotificationsRead(patronID int64) error {
-	_, err := s.DB.Exec(`UPDATE notifications SET read=1 WHERE patron_id=? AND read=0`, patronID)
+	_, err := s.DB.Exec(`UPDATE notifications SET is_read=1 WHERE patron_id=? AND is_read=0`, patronID)
 	return err
 }

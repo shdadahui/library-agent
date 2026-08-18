@@ -17,10 +17,10 @@ var migrations = []migration{
 		type VARCHAR(16) NOT NULL DEFAULT 'system',
 		title VARCHAR(128) NOT NULL,
 		body VARCHAR(512) NOT NULL DEFAULT '',
-		read INTEGER NOT NULL DEFAULT 0,
+		is_read INTEGER NOT NULL DEFAULT 0,
 		created_at VARCHAR(32) NOT NULL
 	)`, Desc: "系统通知表（预约到书/逾期提醒）"},
-	{Version: 4, SQL: `CREATE INDEX IF NOT EXISTS idx_notif_patron ON notifications(patron_id, read)`, Desc: "通知查询索引"},
+	{Version: 4, SQL: `CREATE INDEX idx_notif_patron ON notifications(patron_id, is_read)`, Desc: "通知查询索引（MySQL 不支持 IF NOT EXISTS；重复索引由容错逻辑视为已完成）"},
 }
 
 type migration struct {
