@@ -25,11 +25,19 @@ import (
 func main() {
 	addr := flag.String("addr", ":8642", "监听地址")
 	cfgPath := flag.String("config", "config.json", "配置文件路径")
+	provider := flag.String("provider", "", "覆盖 activeProvider（运行时切换 LLM 供应商，如 sensenova/deepseek/openai/mock）")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		slog.Error("加载配置失败", "err", err)
+		os.Exit(1)
+	}
+	if *provider != "" {
+		cfg.ActiveProvider = *provider // 运行时切换供应商，无需改配置文件
+	}
+	if _, ok := cfg.Providers[cfg.ActiveProvider]; !ok {
+		slog.Error("未知的供应商", "provider", cfg.ActiveProvider, "可用", providerNames(cfg))
 		os.Exit(1)
 	}
 
@@ -92,4 +100,13 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("服务已安全退出")
+}
+
+// providerNames 返回可用供应商名列表（错误提示用）。
+func providerNames(cfg *config.Config) []string {
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	return names
 }

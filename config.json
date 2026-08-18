@@ -14,6 +14,16 @@
       "baseURL": "",
       "apiKeyEnv": "",
       "defaultModel": "mock"
+    },
+    "sensenova": {
+      "baseURL": "https://token.sensenova.cn/v1",
+      "apiKeyEnv": "SENSENOVA_API_KEY",
+      "defaultModel": "sensenova-6.8-flash-lite"
+    },
+    "openai-compat": {
+      "baseURL": "https://api.example.com/v1",
+      "apiKeyEnv": "EXAMPLE_API_KEY",
+      "defaultModel": "your-model"
     }
   },
   "activeProvider": "deepseek",

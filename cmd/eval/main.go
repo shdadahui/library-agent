@@ -122,6 +122,7 @@ func main() {
 	casesPath := flag.String("cases", "data/eval/cases.json", "评测集路径")
 	cfgPath := flag.String("config", "config.json", "LLM 配置路径")
 	mock := flag.Bool("mock", false, "强制 mock 模式（不调用真实 LLM）")
+	providerFlag := flag.String("provider", "", "覆盖 activeProvider（运行时切换供应商，如 sensenova）")
 	only := flag.String("only", "", "只运行指定用例 ID")
 	retry := flag.Int("retry", 1, "执行出错（LLM 请求失败等）时的重试次数")
 	outPath := flag.String("out", "", "报告输出路径（默认 data/eval/report-<ts>.json）")
@@ -142,6 +143,9 @@ func main() {
 	if err != nil && !*mock {
 		fmt.Fprintf(os.Stderr, "加载配置失败: %v（可加 -mock 用本地模式）\n", err)
 		os.Exit(2)
+	}
+	if *providerFlag != "" {
+		cfg.ActiveProvider = *providerFlag // 运行时切换供应商（如 sensenova）
 	}
 	if cfg == nil {
 		cfg = &config.Config{
