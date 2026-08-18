@@ -297,7 +297,11 @@ func (s *Service) Borrow(patronID, itemID int64) (*store.Loan, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(active) >= MaxActiveLoans {
+	limit := MaxActiveLoans
+	if s.st.IsVip(patronID) {
+		limit = MaxActiveLoans * 2 // VIP 借阅上限 10
+	}
+	if len(active) >= limit {
 		return nil, ErrLoanLimitReached
 	}
 	days := it.LoanDurationDays

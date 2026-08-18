@@ -19,7 +19,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	for _, p := range patrons {
 		// 关联该读者的登录账号（若有）
 		row := map[string]any{
-			"id": p.ID, "name": p.Name, "barcode": p.Barcode, "phone": p.Phone,
+			"id": p.ID, "name": p.Name, "barcode": p.Barcode, "phone": p.Phone, "vip": p.Vip,
 		}
 		if user, err := s.Svc.FindUserByPatronID(p.ID); err == nil {
 			row["username"] = user.Username

@@ -426,6 +426,14 @@
 .bar-col .lbl { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 100%; }
 .bar-legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
 .bar-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* 收藏条 + 我的收藏 */
+.fav-bar { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.fav-row { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 2px 0; }
+.fav-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-btn { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; cursor: pointer; }
+.fav-btn:hover { border-color: var(--primary); color: var(--primary); }
+.tag.vip { background: rgba(245,158,11,.15); color: #d97706; }
 </style>
 </head>
 <body>
@@ -956,6 +964,35 @@ async function send() {
                 card.appendChild(box);
               }
             }
+            // 收藏/评分条（result 为书目数组时）
+            try {
+              const arr = typeof data.result === "string" ? JSON.parse(data.result) : data.result;
+              if (Array.isArray(arr) && arr.length && arr[0] && arr[0].id && arr[0].title) {
+                const fbox = document.createElement("div");
+                fbox.className = "fav-bar";
+                fbox.innerHTML = arr.slice(0, 5).map(b => '<div class="fav-row" data-id="' + b.id + '" data-title="' + escapeHtml(b.title) + '"><span class="fav-title">《' + escapeHtml(b.title) + '》</span><button class="fav-btn" data-act="fav">❤️ 收藏</button><button class="fav-btn" data-act="rate">⭐ 评分</button></div>').join("");
+                card.appendChild(fbox);
+                fbox.querySelectorAll(".fav-btn").forEach(btn => {
+                  btn.onclick = async () => {
+                    const row = btn.closest(".fav-row");
+                    const id = row.dataset.id;
+                    try {
+                      if (btn.dataset.act === "fav") {
+                        const r = await api("/api/me/favorites/" + id, { method: "POST" });
+                        btn.textContent = r.favorited ? "💔 取消收藏" : "❤️ 收藏";
+                        toast(r.favorited ? "✅ 已收藏" : "已取消收藏");
+                      } else {
+                        const sc = prompt("给《" + row.dataset.title + "》评分（1-5 星）", "5");
+                        if (!sc) return;
+                        const r = await api("/api/biblios/" + id + "/rating", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ score: parseInt(sc, 10) }) });
+                        btn.textContent = "⭐ " + (Math.round(r.avg * 10) / 10) + "（" + r.count + "人）";
+                        toast("✅ 已评分");
+                      }
+                    } catch (e) { toast("❌ " + e.message); }
+                  };
+                });
+              }
+            } catch (e) {}
             card.querySelector(".result-summary").title = prettyJSON(data.result);
           }
           scrollBottom();
@@ -1296,13 +1333,14 @@ window.addEventListener('error', e => { const d=document.createElement('div'); d
     <button data-tab="fines">💰 罚款</button>
     <button data-tab="holds">📌 预约</button>
     <button data-tab="notifications">🔔 消息<span class="bd" id="notifTabBadge" style="display:none">0</span></button>
+    <button data-tab="favorites">❤️ 收藏</button>
   </div>
   <div id="myPanel"></div>
 </div></div>
 
 <script>
 /* ---------- 我的面板（客户端自主操作：续借/还书/取消预约/消息） ---------- */
-const PANEL_TABS = {"my-loans":"loans","my-fines":"fines","my-holds":"holds","my-notifications":"notifications"};
+const PANEL_TABS = {"my-loans":"loans","my-fines":"fines","my-holds":"holds","my-notifications":"notifications","my-favorites":"favorites"};
 let myTab = "loans";
 function openPanel(panel) {
   if (PANEL_TABS[panel]) { $("#myModal").classList.add("on"); switchMyTab(PANEL_TABS[panel]); return; }
@@ -1318,6 +1356,7 @@ function switchMyTab(tab) {
   else if (tab === "fines") loadMyFines();
   else if (tab === "holds") loadMyHolds();
   else if (tab === "notifications") loadMyNotifications();
+  else if (tab === "favorites") loadMyFavorites();
 }
 async function loadMyLoans() {
   const el = $("#myPanel");
@@ -1547,7 +1586,8 @@ async function loadAdminPatrons() {
       ops += dis ? '<button data-op="enable" data-id="' + u.id + '">恢复</button>' : '<button data-op="disable" data-id="' + u.id + '" class="danger">停用</button>';
       if (u.role !== "admin") ops += ' <button data-op="mkadmin" data-id="' + u.id + '">设为馆员</button>';
       else ops += ' <button data-op="mkuser" data-id="' + u.id + '">设为读者</button>';
-      return '<tr><td>' + u.id + '</td><td>' + escapeHtml(u.name) + '</td><td>' + escapeHtml(u.username || "-") + '</td><td>' + (u.role || "user") + '</td><td>' + (dis ? '<span class="tag overdue">已停用</span>' : '<span class="tag ok">正常</span>') + '</td><td>' + (u.active_loans || 0) + '</td><td>' + ops + '</td></tr>';
+      ops += (u.vip ? ' <button data-op="vip" data-vip="1" data-id="' + u.id + '">💎VIP✓</button>' : ' <button data-op="vip" data-vip="0" data-id="' + u.id + '">设为VIP</button>');
+      return '<tr><td>' + u.id + '</td><td>' + escapeHtml(u.name) + '</td><td>' + escapeHtml(u.username || "-") + '</td><td>' + (u.role || "user") + (u.vip ? ' <span class="tag vip">💎</span>' : '') + '</td><td>' + (dis ? '<span class="tag overdue">已停用</span>' : '<span class="tag ok">正常</span>') + '</td><td>' + (u.active_loans || 0) + '</td><td>' + ops + '</td></tr>';
     }).join("");
     document.querySelectorAll("#apTbody [data-op]").forEach(btn => {
       btn.onclick = async () => {
@@ -1656,5 +1696,46 @@ switchAdminTab = function(tab) {
 
 </script>
 
+<script>
+
+/* ---------- P2：收藏列表 + VIP ---------- */
+async function loadMyFavorites() {
+  const el = $("#myPanel");
+  try {
+    const d = await api("/api/me/favorites");
+    if (!d.items.length) { el.innerHTML = '<div class="my-empty">❤️ 还没有收藏，检索图书时点「收藏」即可加入</div>'; return; }
+    el.innerHTML = '<div class="my-list">' + d.items.map(f =>
+      '<div class="my-row"><div class="my-t"><b>《' + escapeHtml(f.title) + '》</b><span class="my-m">' + escapeHtml(f.author || "") + ' · ' + escapeHtml(f.subjects || "") + '</span></div><div class="my-a">' +
+      (f.avail_copies > 0 ? '<span class="tag ok">可借 ' + f.avail_copies + '</span>' : '<span class="tag overdue">暂无可借</span>') +
+      ' <button data-fid="' + f.biblio_id + '">💔 取消</button></div></div>'
+    ).join("") + '</div>';
+    el.querySelectorAll("[data-fid]").forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await api("/api/me/favorites/" + btn.dataset.fid, { method: "POST" });
+          toast("已取消收藏"); loadMyFavorites();
+        } catch (e) { toast("❌ " + e.message); }
+      };
+    });
+  } catch (e) { el.innerHTML = '<div class="my-empty">加载失败：' + escapeHtml(e.message) + '</div>'; }
+}
+/* VIP 管理按钮（读者页） */
+function bindVipOps() {
+  document.querySelectorAll("#apTbody [data-op=vip]").forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        const id = btn.dataset.id, vip = btn.dataset.vip === "1";
+        await api("/api/admin/patrons/" + id + "/vip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vip: !vip }) });
+        toast("✅ VIP 已更新"); loadAdminPatrons();
+      } catch (e) { toast("❌ " + e.message); }
+    };
+  });
+}
+const _origPatrons = loadAdminPatrons;
+loadAdminPatrons = function() {
+  return _origPatrons().then ? _origPatrons().then(bindVipOps) : (bindVipOps(), undefined);
+};
+
+</script>
 </body>
 </html>

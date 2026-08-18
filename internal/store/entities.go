@@ -40,6 +40,7 @@ type Patron struct {
 	Barcode string `json:"barcode"`
 	Phone   string `json:"phone,omitempty"`
 	Status  string `json:"status"` // active / disabled
+	Vip     int    `json:"vip"`    // 0/1 VIP 会员
 }
 
 // Loan 流通记录（借阅）。
@@ -229,7 +230,7 @@ func (s *Store) InsertItem(it *Item) (int64, error) {
 
 // ListPatrons 全部读者。
 func (s *Store) ListPatrons() ([]Patron, error) {
-	rows, err := s.DB.Query(`SELECT id,name,barcode,phone,status FROM patrons ORDER BY id`)
+	rows, err := s.DB.Query(`SELECT id,name,barcode,phone,status,vip FROM patrons ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +238,7 @@ func (s *Store) ListPatrons() ([]Patron, error) {
 	out := []Patron{}
 	for rows.Next() {
 		var p Patron
-		if err := rows.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status, &p.Vip); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -247,9 +248,9 @@ func (s *Store) ListPatrons() ([]Patron, error) {
 
 // GetPatron 按 ID 取读者。
 func (s *Store) GetPatron(id int64) (*Patron, error) {
-	row := s.DB.QueryRow(`SELECT id,name,barcode,phone,status FROM patrons WHERE id=?`, id)
+	row := s.DB.QueryRow(`SELECT id,name,barcode,phone,status,vip FROM patrons WHERE id=?`, id)
 	var p Patron
-	if err := row.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status, &p.Vip); err != nil {
 		return nil, err
 	}
 	return &p, nil
@@ -266,9 +267,9 @@ func (s *Store) InsertPatron(p *Patron) (int64, error) {
 
 // GetPatronByBarcode 按读者证号取读者（seed 幂等用）。
 func (s *Store) GetPatronByBarcode(barcode string) (*Patron, error) {
-	row := s.DB.QueryRow(`SELECT id,name,barcode,phone,status FROM patrons WHERE barcode=?`, barcode)
+	row := s.DB.QueryRow(`SELECT id,name,barcode,phone,status,vip FROM patrons WHERE barcode=?`, barcode)
 	var p Patron
-	if err := row.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.Barcode, &p.Phone, &p.Status, &p.Vip); err != nil {
 		return nil, err
 	}
 	return &p, nil

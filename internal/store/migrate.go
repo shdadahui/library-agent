@@ -34,6 +34,24 @@ var migrations = []migration{
 	{Version: 9, SQL: `CREATE INDEX idx_loginlog_time ON login_logs(created_at)`, Desc: "登录日志时间索引"},
 	{Version: 10, SQL: `ALTER TABLE notifications MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键（迁移建表缺 AUTO_INCREMENT，插入静默失败）"},
 	{Version: 11, SQL: `ALTER TABLE login_logs MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键（同上）"},
+	{Version: 12, SQL: `CREATE TABLE IF NOT EXISTS favorites(
+		id INTEGER PRIMARY KEY,
+		patron_id INTEGER NOT NULL,
+		biblio_id INTEGER NOT NULL,
+		created_at VARCHAR(32) NOT NULL
+	)`, Desc: "读者收藏书目"},
+	{Version: 13, SQL: `CREATE TABLE IF NOT EXISTS ratings(
+		id INTEGER PRIMARY KEY,
+		patron_id INTEGER NOT NULL,
+		biblio_id INTEGER NOT NULL,
+		score INTEGER NOT NULL,
+		created_at VARCHAR(32) NOT NULL
+	)`, Desc: "读者评分（1-5 星）"},
+	{Version: 14, SQL: `ALTER TABLE patrons ADD COLUMN vip INTEGER NOT NULL DEFAULT 0`, Desc: "VIP 会员标记（借阅上限 10）"},
+	{Version: 15, SQL: `CREATE INDEX idx_fav_patron ON favorites(patron_id)`, Desc: "收藏按读者查询索引"},
+	{Version: 16, SQL: `CREATE INDEX idx_rate_biblio ON ratings(biblio_id)`, Desc: "评分按书目聚合索引"},
+	{Version: 17, SQL: `ALTER TABLE favorites MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键"},
+	{Version: 18, SQL: `ALTER TABLE ratings MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键"},
 }
 
 type migration struct {
