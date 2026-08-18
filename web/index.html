@@ -357,8 +357,19 @@
 .suggest-row button { border: 1px dashed var(--primary); color: var(--primary); background: rgba(59,130,246,.06); border-radius: 8px; padding: 4px 11px; font-size: 12px; cursor: pointer; }
 .suggest-row button:hover { background: var(--primary); color: #fff; }
 /* 侧边栏我的按钮角标 */
-.badge-dot { position: absolute; top: -3px; right: -3px; background: var(--err); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 4px; line-height: 14px; }
-.me-wrap { position: relative; }
+.badge-dot { position: absolute; top: -3px; right: -3px; background: var(--err); color: #fff; font-size: 10px; border-radius: 9px; padding: 0 4px; line-height: 14px; pointer-events: none; z-index: 2; }
+.me-wrap { position: relative; display: inline-block; }
+
+/* 馆员工作台 */
+.admin-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.admin-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 7px; }
+.admin-card .ac-title { font-size: 13px; font-weight: 500; }
+.admin-card input { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 8px; padding: 6px 9px; font-size: 12.5px; color: var(--text); }
+.admin-card button { border: 1px solid var(--primary); background: none; color: var(--primary); border-radius: 8px; padding: 6px; font-size: 12.5px; cursor: pointer; }
+.admin-card button:hover { background: var(--primary); color: #fff; }
+.admin-card .ac-msg { font-size: 12px; color: var(--muted); min-height: 16px; word-break: break-all; }
+.admin-card .ac-msg.ok { color: #16a34a; }
+.admin-card .ac-msg.err { color: var(--err); }
 </style>
 </head>
 <body>
@@ -424,6 +435,33 @@
               <thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>在借</th><th>电话</th></tr></thead>
               <tbody></tbody>
             </table>
+          </div>
+          <div class="admin-section">
+            <h3>🛠 馆员工作台（借书系统配套）</h3>
+            <div class="admin-cards">
+              <div class="admin-card">
+                <div class="ac-title">📤 借出登记</div>
+                <input id="coPatron" placeholder="读者条码（如 P0001）" />
+                <input id="coItem" placeholder="图书条码（如 LIB-00001-1）" />
+                <button id="coBtn">办理借出</button>
+                <div class="ac-msg" id="coMsg"></div>
+              </div>
+              <div class="admin-card">
+                <div class="ac-title">📥 归还登记</div>
+                <input id="rtItem" placeholder="图书条码" />
+                <button id="rtBtn">办理归还</button>
+                <div class="ac-msg" id="rtMsg"></div>
+              </div>
+              <div class="admin-card">
+                <div class="ac-title">📚 新增书目</div>
+                <input id="abTitle" placeholder="书名 *" />
+                <input id="abAuthor" placeholder="作者" />
+                <input id="abSubjects" placeholder="分类（如 小说/科幻/历史）" />
+                <input id="abCopies" type="number" value="1" min="1" placeholder="副本数" />
+                <button id="abBtn">入库</button>
+                <div class="ac-msg" id="abMsg"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -558,6 +596,42 @@ document.querySelectorAll("#myTabs button").forEach(b => b.onclick = () => switc
 // 登录成功后刷新未读角标
 const _origPostLogin = postLogin || function(){};
 postLogin = function(d) { const r = _origPostLogin(d); loadNotifBadge(); return r; };
+
+
+/* ---------- 馆员工作台（借书系统配套） ---------- */
+function acMsg(id, text, ok) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "ac-msg " + (ok ? "ok" : (text ? "err" : ""));
+}
+async function adminApi(url, body) {
+  return api(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+$("#coBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/checkout", { patron_barcode: $("#coPatron").value.trim(), item_barcode: $("#coItem").value.trim() });
+    acMsg("#coMsg", "✅ 借出成功：应还 " + r.loan.due_date, true);
+    $("#coPatron").value = ""; $("#coItem").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#coMsg", "❌ " + e.message, false); }
+};
+$("#rtBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/return", { item_barcode: $("#rtItem").value.trim() });
+    acMsg("#rtMsg", "✅ 归还成功" + (r.fine_cents > 0 ? "，罚款 ¥" + (r.fine_cents / 100).toFixed(1) : "") + (r.hold_wake_up ? "，" + r.hold_wake_up : ""), true);
+    $("#rtItem").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#rtMsg", "❌ " + e.message, false); }
+};
+$("#abBtn").onclick = async () => {
+  try {
+    const r = await adminApi("/api/admin/books", { title: $("#abTitle").value.trim(), author: $("#abAuthor").value.trim(), subjects: $("#abSubjects").value.trim(), copies: parseInt($("#abCopies").value || "1", 10) });
+    acMsg("#abMsg", "✅ 《" + r.title + "》已入库（ID " + r.id + "）", true);
+    $("#abTitle").value = ""; $("#abAuthor").value = ""; $("#abSubjects").value = "";
+    loadAdminPanel();
+  } catch (e) { acMsg("#abMsg", "❌ " + e.message, false); }
+};
+function loadAdminPanel() { $("#adminBtn").click(); $("#adminBtn").click(); }
 
 </script>
 <script src="vendor/purify.min.js"></script>

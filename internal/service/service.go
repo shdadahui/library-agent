@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
@@ -480,3 +481,31 @@ func centsToYuan(cents int) string {
 	return itoa(whole) + "." + itoa(frac)
 }
 
+
+// ErrInvalidInput 输入不合法。
+var ErrInvalidInput = errors.New("输入不合法")
+
+// locationForBook 按学科主题映射馆藏位置（与 seed 一致，供馆员加书时使用）。
+func locationForBook(subjects string) string {
+	s := strings.ToLower(subjects)
+	mapping := []struct {
+		keys []string
+		loc  string
+	}{
+		{[]string{"科幻", "小说", "文学", "诗歌", "散文", "魔幻", "sci-fi", "fiction"}, "3F 文学借阅区"},
+		{[]string{"数学", "物理", "化学", "生物", "科学", "计算机", "编程", "math", "science"}, "2F 自然科学借阅区"},
+		{[]string{"历史", "传记", "地理", "history", "战争"}, "3F 社科借阅区·历史"},
+		{[]string{"哲学", "心理", "philosophy"}, "4F 哲学心理区"},
+		{[]string{"经济", "管理", "金融", "投资", "economy"}, "4F 社科借阅区·经管"},
+		{[]string{"英语", "外语", "语言", "english"}, "2F 语言学习区"},
+		{[]string{"艺术", "设计", "绘画", "art"}, "5F 艺术设计区"},
+	}
+	for _, m := range mapping {
+		for _, k := range m.keys {
+			if strings.Contains(s, k) {
+				return m.loc
+			}
+		}
+	}
+	return "总馆"
+}

@@ -1,5 +1,6 @@
 package api
 
+
 import (
 	"net/http"
 	"strconv"
@@ -63,3 +64,59 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// handleAdminCheckout 馆员借出登记（管理员）：读者条码 + 图书条码。
+func (s *Server) handleAdminCheckout(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PatronBarcode string `json:"patron_barcode"`
+		ItemBarcode   string `json:"item_barcode"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	loan, err := s.Svc.CheckoutByBarcode(body.PatronBarcode, body.ItemBarcode)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"loan": loan})
+}
+
+// handleAdminReturn 馆员归还登记（管理员）：图书条码。
+func (s *Server) handleAdminReturn(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ItemBarcode string `json:"item_barcode"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	res, err := s.Svc.ReturnByItemBarcode(body.ItemBarcode)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleAdminAddBook 馆员新增书目（管理员）。
+func (s *Server) handleAdminAddBook(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Title     string `json:"title"`
+		Author    string `json:"author"`
+		ISBN      string `json:"isbn"`
+		Publisher string `json:"publisher"`
+		Subjects  string `json:"subjects"`
+		Year      int    `json:"year"`
+		Copies    int    `json:"copies"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	b, err := s.Svc.AdminAddBook(body.Title, body.Author, body.ISBN, body.Publisher, body.Subjects, body.Year, body.Copies)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, b)
+}
+

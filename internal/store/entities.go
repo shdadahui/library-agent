@@ -493,3 +493,17 @@ func (s *Store) CancelHoldByID(patronID, holdID int64) error {
 
 // ErrHoldNotCancelable 预约不可取消（不存在/非本人/已唤醒）。
 var ErrHoldNotCancelable = errors.New("预约不存在或不可取消")
+
+// GetItemByBarcode 按条码查副本。
+func (s *Store) GetItemByBarcode(barcode string) (*Item, error) {
+	var it Item
+	var loc, status string
+	err := s.DB.QueryRow(`SELECT id,biblio_id,barcode,status,location,loan_duration_days FROM items WHERE barcode=?`, barcode).
+		Scan(&it.ID, &it.BiblioID, &it.Barcode, &status, &loc, &it.LoanDurationDays)
+	if err != nil {
+		return nil, err
+	}
+	it.Status = status
+	it.Location = loc
+	return &it, nil
+}
