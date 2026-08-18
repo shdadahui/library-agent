@@ -279,8 +279,12 @@ func (s *Service) renewErr(l store.Loan, today string) error {
 
 // Borrow 借书。
 func (s *Service) Borrow(patronID, itemID int64) (*store.Loan, error) {
-	if _, err := s.st.GetPatron(patronID); err != nil {
+	p, err := s.st.GetPatron(patronID)
+	if err != nil {
 		return nil, ErrPatronNotFound
+	}
+	if p.Status == "disabled" {
+		return nil, errors.New("您的读者账号已被停用，请联系馆员")
 	}
 	it, err := s.st.GetItem(itemID)
 	if err != nil {

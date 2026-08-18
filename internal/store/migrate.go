@@ -21,6 +21,7 @@ var migrations = []migration{
 		created_at VARCHAR(32) NOT NULL
 	)`, Desc: "系统通知表（预约到书/逾期提醒）"},
 	{Version: 4, SQL: `CREATE INDEX idx_notif_patron ON notifications(patron_id, is_read)`, Desc: "通知查询索引（MySQL 不支持 IF NOT EXISTS；重复索引由容错逻辑视为已完成）"},
+	{Version: 6, SQL: `ALTER TABLE patrons ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'`, Desc: "读者状态（active/disabled 禁用）"},
 }
 
 type migration struct {

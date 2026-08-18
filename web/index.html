@@ -370,6 +370,36 @@
 .admin-card .ac-msg { font-size: 12px; color: var(--muted); min-height: 16px; word-break: break-all; }
 .admin-card .ac-msg.ok { color: #16a34a; }
 .admin-card .ac-msg.err { color: var(--err); }
+
+/* 管理端多页 */
+.admin-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.admin-tabs button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 8px; padding: 5px 14px; font-size: 12.5px; cursor: pointer; }
+.admin-tabs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.adm-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.adm-toolbar input, .adm-toolbar select { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--text); }
+.adm-toolbar button { border: 1px solid var(--primary); background: none; color: var(--primary); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+.adm-toolbar button:hover { background: var(--primary); color: #fff; }
+.adm-count { color: var(--muted); font-size: 12px; }
+.adm-pager { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.adm-pager button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+#adminPanel .admin-table button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; cursor: pointer; color: var(--text); }
+#adminPanel .admin-table button:hover { border-color: var(--primary); color: var(--primary); }
+#adminPanel .admin-table button.danger:hover { border-color: var(--err); color: var(--err); }
+
+/* 管理端多页 */
+.admin-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.admin-tabs button { border: 1px solid var(--border); background: none; color: var(--muted); border-radius: 8px; padding: 5px 14px; font-size: 12.5px; cursor: pointer; }
+.admin-tabs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.adm-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.adm-toolbar input, .adm-toolbar select { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; color: var(--text); }
+.adm-toolbar button { border: 1px solid var(--primary); background: none; color: var(--primary); border-radius: 8px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+.adm-toolbar button:hover { background: var(--primary); color: #fff; }
+.adm-count { color: var(--muted); font-size: 12px; }
+.adm-pager { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.adm-pager button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+#adminPanel .admin-table button { border: 1px solid var(--border); background: var(--tool-bg); border-radius: 6px; padding: 2px 8px; font-size: 11.5px; cursor: pointer; color: var(--text); }
+#adminPanel .admin-table button:hover { border-color: var(--primary); color: var(--primary); }
+#adminPanel .admin-table button.danger:hover { border-color: var(--err); color: var(--err); }
 </style>
 </head>
 <body>
@@ -425,45 +455,48 @@
           <span style="color:#b6bcc7;font-size:13px">例如：「帮我查一下《三体》」「我有什么书快到期了」「续借我借的那本书」</span>
         </div>
         <div id="adminPanel">
-          <div class="admin-section">
-            <h3>📋 运营总览</h3>
-            <div class="admin-stat" id="adminStats"></div>
-          </div>
-          <div class="admin-section">
-            <h3>👥 读者列表</h3>
-            <table class="admin-table" id="adminUsers">
-              <thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>在借</th><th>电话</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div class="admin-section">
-            <h3>🛠 馆员工作台（借书系统配套）</h3>
-            <div class="admin-cards">
-              <div class="admin-card">
-                <div class="ac-title">📤 借出登记</div>
-                <input id="coPatron" placeholder="读者条码（如 P0001）" />
-                <input id="coItem" placeholder="图书条码（如 LIB-00001-1）" />
-                <button id="coBtn">办理借出</button>
-                <div class="ac-msg" id="coMsg"></div>
-              </div>
-              <div class="admin-card">
-                <div class="ac-title">📥 归还登记</div>
-                <input id="rtItem" placeholder="图书条码" />
-                <button id="rtBtn">办理归还</button>
-                <div class="ac-msg" id="rtMsg"></div>
-              </div>
-              <div class="admin-card">
-                <div class="ac-title">📚 新增书目</div>
-                <input id="abTitle" placeholder="书名 *" />
-                <input id="abAuthor" placeholder="作者" />
-                <input id="abSubjects" placeholder="分类（如 小说/科幻/历史）" />
-                <input id="abCopies" type="number" value="1" min="1" placeholder="副本数" />
-                <button id="abBtn">入库</button>
-                <div class="ac-msg" id="abMsg"></div>
-              </div>
-            </div>
-          </div>
-        </div>
+  <div class="admin-tabs">
+    <button data-atab="overview" class="on">📊 总览</button>
+    <button data-atab="books">📚 书目</button>
+    <button data-atab="loans">📖 借阅</button>
+    <button data-atab="patrons">👥 读者</button>
+    <button data-atab="workbench">🛠 工作台</button>
+  </div>
+  <div id="adminOverview">
+    <div class="admin-section"><h3>📊 运营总览</h3><div class="admin-stat" id="adminStats"></div></div>
+    <div class="admin-section"><h3>👥 读者列表</h3>
+      <table class="admin-table" id="adminUsers"><thead><tr><th>姓名</th><th>用户名</th><th>角色</th><th>状态</th><th>在借</th><th>电话</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+  <div id="adminBooks" style="display:none">
+    <div class="admin-section"><h3>📚 书目管理</h3>
+      <div class="adm-toolbar"><input id="abSearch" placeholder="书名 / 作者 / ISBN" /><button id="abSearchBtn">搜索</button><span class="adm-count" id="abCount"></span></div>
+      <table class="admin-table"><thead><tr><th>ID</th><th>书名</th><th>作者</th><th>分类</th><th>年份</th><th>副本</th><th>可借</th><th>在借</th><th>预约</th><th>操作</th></tr></thead><tbody id="abTbody"></tbody></table>
+      <div class="adm-pager" id="abPager"></div>
+    </div>
+  </div>
+  <div id="adminLoans" style="display:none">
+    <div class="admin-section"><h3>📖 借阅记录</h3>
+      <div class="adm-toolbar"><select id="alStatus"><option value="">全部状态</option><option value="active">在借</option><option value="returned">已还</option></select><input id="alSearch" placeholder="书名 / 读者姓名" /><button id="alSearchBtn">筛选</button><button id="alExportBtn">⬇ 导出 CSV</button><span class="adm-count" id="alCount"></span></div>
+      <table class="admin-table"><thead><tr><th>ID</th><th>书名</th><th>条码</th><th>读者</th><th>借出</th><th>应还</th><th>状态</th></tr></thead><tbody id="alTbody"></tbody></table>
+      <div class="adm-pager" id="alPager"></div>
+    </div>
+  </div>
+  <div id="adminPatrons" style="display:none">
+    <div class="admin-section"><h3>👥 读者管理</h3>
+      <table class="admin-table"><thead><tr><th>ID</th><th>姓名</th><th>账号</th><th>角色</th><th>状态</th><th>在借</th><th>操作</th></tr></thead><tbody id="apTbody"></tbody></table>
+    </div>
+  </div>
+  <div id="adminWorkbench" style="display:none">
+    <div class="admin-section"><h3>🛠 馆员工作台</h3>
+      <div class="admin-cards">
+        <div class="admin-card"><div class="ac-title">📤 借出登记</div><input id="coPatron" placeholder="读者条码（如 P0001）" /><input id="coItem" placeholder="图书条码（如 LIB-00001-1）" /><button id="coBtn">办理借出</button><div class="ac-msg" id="coMsg"></div></div>
+        <div class="admin-card"><div class="ac-title">📥 归还登记</div><input id="rtItem" placeholder="图书条码" /><button id="rtBtn">办理归还</button><div class="ac-msg" id="rtMsg"></div></div>
+        <div class="admin-card"><div class="ac-title">📚 新增书目</div><input id="abTitle" placeholder="书名 *" /><input id="abAuthor" placeholder="作者" /><input id="abSubjects" placeholder="分类（如 小说/科幻/历史）" /><input id="abCopies" type="number" value="1" min="1" placeholder="副本数" /><button id="abBtn">入库</button><div class="ac-msg" id="abMsg"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
       </div>
     </div>
     <div id="composer">
@@ -1371,6 +1404,158 @@ $("#abBtn").onclick = async () => {
 function loadAdminPanel() { $("#adminBtn").click(); $("#adminBtn").click(); }
 
 
+
+</script>
+<script>
+
+/* ---------- 管理端多页（P0 表格化升级） ---------- */
+let adminTab = "overview";
+let abPage = 1, abQ = "";
+let alPage = 1, alStatus = "", alQ = "";
+
+function switchAdminTab(tab) {
+  adminTab = tab;
+  document.querySelectorAll("#adminPanel .admin-tabs button").forEach(b => b.classList.toggle("on", b.dataset.atab === tab));
+  ["adminOverview","adminBooks","adminLoans","adminPatrons","adminWorkbench"].forEach(id => {
+    $("#" + id).style.display = (id === "admin" + tab[0].toUpperCase() + tab.slice(1)) ? "" : "none";
+  });
+  if (tab === "books") loadAdminBooks(abPage, abQ);
+  else if (tab === "loans") loadAdminLoans(alPage, alStatus, alQ);
+  else if (tab === "patrons") loadAdminPatrons();
+  else if (tab === "overview") loadAdminOverview();
+}
+function admToolbar() {
+  return '<div class="adm-toolbar"><input id="abSearch" placeholder="书名 / 作者 / ISBN" value="' + escapeHtml(abQ) + '" /><button id="abSearchBtn">搜索</button><span class="adm-count" id="abCount"></span></div>';
+}
+function admPager(total, pages, page, fn) {
+  if (pages <= 1) return '<div class="adm-pager"></div>';
+  let h = '<button ' + (page <= 1 ? "disabled" : "") + ' onclick="' + fn + '(' + (page-1) + ')">‹</button> <span>' + page + '/' + pages + '（共 ' + total + '）</span> <button ' + (page >= pages ? "disabled" : "") + ' onclick="' + fn + '(' + (page+1) + ')">›</button>';
+  return '<div class="adm-pager">' + h + '</div>';
+}
+async function loadAdminBooks(page, q) {
+  abPage = page; abQ = q;
+  const el = $("#abTbody");
+  try {
+    const d = await api("/api/admin/books?page=" + page + "&size=20&q=" + encodeURIComponent(q || ""));
+    $("#abCount").textContent = "共 " + d.total + " 本";
+    el.innerHTML = d.items.map(b => {
+      let ops = '<button data-op="edit" data-id="' + b.id + '">编辑</button> <button data-op="copies" data-id="' + b.id + '">+副本</button> <button data-op="del" data-id="' + b.id + '" class="danger">删除</button>';
+      return '<tr><td>' + b.id + '</td><td>' + escapeHtml(b.title) + '</td><td>' + escapeHtml(b.author || "-") + '</td><td>' + escapeHtml(b.subjects || "-") + '</td><td>' + (b.publish_year || "-") + '</td><td>' + b.total_copies + '</td><td>' + b.avail_copies + '</td><td>' + b.active_loans + '</td><td>' + b.waiting_holds + '</td><td>' + ops + '</td></tr>';
+    }).join("");
+    $("#abPager").outerHTML = admPager(d.total, d.pages, d.page, "loadAdminBooks");
+    bindBookOps();
+  } catch (e) { el.innerHTML = '<tr><td colspan="10">加载失败：' + escapeHtml(e.message) + '</td></tr>'; }
+}
+function bindBookOps() {
+  document.querySelectorAll("#abTbody [data-op]").forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id, op = btn.dataset.op;
+      try {
+        if (op === "edit") {
+          const row = btn.closest("tr");
+          const t = prompt("书名", row.children[1].textContent);
+          if (t === null) return;
+          const a = prompt("作者", row.children[2].textContent);
+          const sub = prompt("分类", row.children[3].textContent);
+          await api("/api/admin/books/" + id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t, author: a, subjects: sub }) });
+          toast("✅ 已保存"); loadAdminBooks(abPage, abQ);
+        } else if (op === "copies") {
+          const n = prompt("新增副本数", "1");
+          if (!n) return;
+          const r = await api("/api/admin/books/" + id + "/copies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ copies: parseInt(n, 10) }) });
+          toast("✅ 新增副本 " + r.barcodes.length + " 个"); loadAdminBooks(abPage, abQ);
+        } else if (op === "del") {
+          if (!confirm("确认删除该书目及其全部副本？")) return;
+          await api("/api/admin/books/" + id, { method: "DELETE" });
+          toast("✅ 已删除"); loadAdminBooks(abPage, abQ);
+        }
+      } catch (e) { toast("❌ " + e.message); }
+    };
+  });
+}
+async function loadAdminLoans(page, status, q) {
+  alPage = page; alStatus = status; alQ = q;
+  const el = $("#alTbody");
+  try {
+    const d = await api("/api/admin/loans?page=" + page + "&size=20&status=" + encodeURIComponent(status || "") + "&q=" + encodeURIComponent(q || ""));
+    $("#alCount").textContent = "共 " + d.total + " 条";
+    const today = new Date().toISOString().slice(0, 10);
+    el.innerHTML = d.items.map(r => {
+      const over = r.status === "active" && r.due_date < today;
+      return '<tr><td>' + r.id + '</td><td>' + escapeHtml(r.title) + '</td><td>' + r.barcode + '</td><td>' + escapeHtml(r.patron_name) + '</td><td>' + r.checkout_date + '</td><td>' + r.due_date + '</td><td>' + (r.status === "active" ? (over ? '<span class="tag overdue">逾期</span>' : '<span class="tag ok">在借</span>') : "已还") + '</td></tr>';
+    }).join("");
+    $("#alPager").outerHTML = admPager(d.total, d.pages, d.page, "loadAdminLoans");
+    window.__loans = d.items;
+  } catch (e) { el.innerHTML = '<tr><td colspan="7">加载失败：' + escapeHtml(e.message) + '</td></tr>'; }
+}
+function exportLoansCSV() {
+  const rows = window.__loans || [];
+  if (!rows.length) { toast("当前无数据可导出"); return; }
+  const head = "ID,书名,条码,读者,借出,应还,状态";
+  const lines = rows.map(r => [r.id, '"' + r.title.replace(/"/g, '""') + '"', r.barcode, '"' + r.patron_name.replace(/"/g, '""') + '"', r.checkout_date, r.due_date, r.status].join(","));
+  const blob = new Blob(["﻿" + head + "\n" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "借阅记录.csv";
+  a.click();
+  toast("✅ 已导出 " + rows.length + " 条");
+}
+async function loadAdminPatrons() {
+  const el = $("#apTbody");
+  try {
+    const users = await api("/api/admin/users");
+    el.innerHTML = users.map(u => {
+      const dis = u.status === "disabled";
+      let ops = '';
+      ops += dis ? '<button data-op="enable" data-id="' + u.id + '">恢复</button>' : '<button data-op="disable" data-id="' + u.id + '" class="danger">停用</button>';
+      if (u.role !== "admin") ops += ' <button data-op="mkadmin" data-id="' + u.id + '">设为馆员</button>';
+      else ops += ' <button data-op="mkuser" data-id="' + u.id + '">设为读者</button>';
+      return '<tr><td>' + u.id + '</td><td>' + escapeHtml(u.name) + '</td><td>' + escapeHtml(u.username || "-") + '</td><td>' + (u.role || "user") + '</td><td>' + (dis ? '<span class="tag overdue">已停用</span>' : '<span class="tag ok">正常</span>') + '</td><td>' + (u.active_loans || 0) + '</td><td>' + ops + '</td></tr>';
+    }).join("");
+    document.querySelectorAll("#apTbody [data-op]").forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          const id = btn.dataset.id, op = btn.dataset.op;
+          const body = op === "disable" ? { status: "disabled" } : op === "enable" ? { status: "active" } : op === "mkadmin" ? { role: "admin" } : { role: "user" };
+          await api("/api/admin/patrons/" + id, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          toast("✅ 已更新"); loadAdminPatrons();
+        } catch (e) { toast("❌ " + e.message); }
+      };
+    });
+  } catch (e) { el.innerHTML = '<tr><td colspan="7">加载失败：' + escapeHtml(e.message) + '</td></tr>'; }
+}
+async function loadAdminOverview() {
+  try {
+    const stats = await api("/api/admin/stats");
+    $("#adminStats").innerHTML =
+      '<div class="card"><div class="n">' + stats.books + '</div><div class="l">藏书</div></div>' +
+      '<div class="card"><div class="n">' + stats.copies + '</div><div class="l">副本</div></div>' +
+      '<div class="card"><div class="n">' + stats.borrowed + '</div><div class="l">在借</div></div>' +
+      '<div class="card"><div class="n">' + stats.patrons + '</div><div class="l">读者</div></div>' +
+      '<div class="card"><div class="n">' + stats.unpaid_fines_yuan + '</div><div class="l">未缴罚款¥</div></div>' +
+      '<div class="card"><div class="n">' + stats.holds_waiting + '</div><div class="l">预约中</div></div>' +
+      '<div class="card"><div class="n">' + stats.available + '</div><div class="l">可借副本</div></div>';
+    const users = await api("/api/admin/users");
+    const tb = $("#adminUsers").querySelector("tbody");
+    tb.innerHTML = users.slice(0, 50).map(u =>
+      '<tr><td>' + escapeHtml(u.name) + '</td><td>' + escapeHtml(u.username || "-") + '</td><td>' + (u.role || "-") + '</td><td>' + (u.status === "disabled" ? "已停用" : "正常") + '</td><td>' + (u.active_loans || 0) + '</td><td>' + escapeHtml(u.phone || "") + '</td></tr>'
+    ).join("");
+  } catch (e) {}
+}
+/* 覆盖管理按钮：打开面板默认总览 tab */
+$("#adminBtn").onclick = async () => {
+  const panel = $("#adminPanel");
+  if (panel.classList.contains("on")) { panel.classList.remove("on"); $("#adminBtn").textContent = "📋"; return; }
+  panel.classList.add("on");
+  $("#adminBtn").textContent = "✖";
+  switchAdminTab(adminTab);
+};
+document.querySelectorAll("#adminPanel .admin-tabs button").forEach(b => b.onclick = () => switchAdminTab(b.dataset.atab));
+/* 搜索/筛选/导出绑定 */
+$("#abSearchBtn").onclick = () => loadAdminBooks(1, $("#abSearch").value.trim());
+$("#alSearchBtn").onclick = () => loadAdminLoans(1, $("#alStatus").value, $("#alSearch").value.trim());
+$("#alStatus").onchange = () => loadAdminLoans(1, $("#alStatus").value, $("#alSearch").value.trim());
+$("#alExportBtn").onclick = exportLoansCSV;
 
 </script>
 </body>

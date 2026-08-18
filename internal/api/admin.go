@@ -4,6 +4,8 @@ package api
 import (
 	"net/http"
 	"strconv"
+
+	"github.com/shdadahui/library-agent/internal/store"
 )
 
 // handleAdminUsers 全部用户（管理员）。
@@ -120,3 +122,132 @@ func (s *Server) handleAdminAddBook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, b)
 }
 
+
+// ---- 管理端扩展：书目管理 / 借阅记录 / 读者管理 ----
+
+// handleAdminBooksV2 书目分页 + 搜索（替代原 handleAdminBooks）。
+func (s *Server) handleAdminBooksV2(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	res, err := s.Svc.AdminListBooks(q, page, size)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleAdminUpdateBook 编辑书目。
+func (s *Server) handleAdminUpdateBook(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var body store.Biblio
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.Svc.AdminUpdateBook(id, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleAdminDeleteBook 删除书目。
+func (s *Server) handleAdminDeleteBook(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Svc.AdminDeleteBook(id); err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleAdminAddCopies 书目加副本。
+func (s *Server) handleAdminAddCopies(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var body struct {
+		Copies int `json:"copies"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	barcodes, err := s.Svc.AdminAddCopies(id, body.Copies)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"barcodes": barcodes})
+}
+
+// handleAdminDeleteItem 删除单个副本。
+func (s *Server) handleAdminDeleteItem(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.Svc.AdminDeleteItem(id); err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleAdminLoans 借阅记录分页 + 筛选。
+func (s *Server) handleAdminLoans(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	q := r.URL.Query().Get("q")
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	res, err := s.Svc.AdminListLoans(status, q, page, size)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// handleAdminUpdatePatron 读者状态/角色。
+func (s *Server) handleAdminUpdatePatron(w http.ResponseWriter, r *http.Request) {
+	id, err := pathID(r, "id")
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+		Role   string `json:"role"`
+	}
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	if err := s.Svc.AdminUpdatePatron(id, body.Status, body.Role); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
