@@ -19,7 +19,8 @@ import (
 func TestFavoriteToggle(t *testing.T) {
 	ts, alice, _ := newTestAPIServer(t)
 	var bid int64
-	if err := json.Unmarshal([]byte(`{"id":1}`), &bid); err == nil { /* noop */ }
+	if err := json.Unmarshal([]byte(`{"id":1}`), &bid); err == nil { /* noop */
+	}
 
 	// 未登录 → 401
 	if code, _ := authPost(ts, "/api/me/favorites/1", "", ""); code != 401 {

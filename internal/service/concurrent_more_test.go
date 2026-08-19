@@ -135,3 +135,41 @@ func TestConcurrentRateBook(t *testing.T) {
 		t.Fatalf("并发评分应仅 1 条，实际 %d", n)
 	}
 }
+
+// TestConcurrentLoanLimit 并发借阅上限：同一读者 30 并发借 30 本不同书，
+// 上限 5 必须严格生效（读者级互斥，防超额借出）。
+func TestConcurrentLoanLimit(t *testing.T) {
+	st, _ := store.Open(":memory:")
+	t.Cleanup(func() { st.Close() })
+	bid, _ := st.InsertBiblio(&store.Biblio{Title: "上限并发书", Lang: "zh"})
+	var itemIDs []int64
+	for i := 0; i < 30; i++ {
+		id, _ := st.InsertItem(&store.Item{BiblioID: bid, Barcode: "LM-I" + itoa(i), Status: "available"})
+		itemIDs = append(itemIDs, id)
+	}
+	pid, _ := st.InsertPatron(&store.Patron{Name: "上限读者", Barcode: "LM-P"})
+	svc := service.New(st)
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	okCount := 0
+	for _, it := range itemIDs {
+		wg.Add(1)
+		go func(it int64) {
+			defer wg.Done()
+			if _, err := svc.Borrow(pid, it); err == nil {
+				mu.Lock()
+				okCount++
+				mu.Unlock()
+			}
+		}(it)
+	}
+	wg.Wait()
+	if okCount != 5 {
+		t.Fatalf("30 并发借阅应严格限制 5 本，实际借出 %d 本", okCount)
+	}
+	loans, _ := st.ActiveLoans(pid)
+	if len(loans) != 5 {
+		t.Fatalf("库内 active loans 应 5，实际 %d", len(loans))
+	}
+}

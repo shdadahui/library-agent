@@ -4,6 +4,7 @@ package service
 
 import (
 	"errors"
+	"sync"
 	"fmt"
 	"strings"
 	"time"
@@ -38,7 +39,8 @@ var (
 
 // Service 图书馆业务服务。
 type Service struct {
-	st *store.Store
+	st       *store.Store
+	borrowMu sync.Map // patronID → *sync.Mutex（每读者借阅上限并发互斥）
 }
 
 // New 创建业务服务。
@@ -279,6 +281,11 @@ func (s *Service) renewErr(l store.Loan, today string) error {
 
 // Borrow 借书。
 func (s *Service) Borrow(patronID, itemID int64) (*store.Loan, error) {
+	// 读者级互斥：借阅上限检查 + 借出必须原子，防止并发超额借出
+	mu, _ := s.borrowMu.LoadOrStore(patronID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
 	p, err := s.st.GetPatron(patronID)
 	if err != nil {
 		return nil, ErrPatronNotFound
@@ -488,7 +495,6 @@ func centsToYuan(cents int) string {
 	}
 	return itoa(whole) + "." + itoa(frac)
 }
-
 
 // ErrInvalidInput 输入不合法。
 var ErrInvalidInput = errors.New("输入不合法")

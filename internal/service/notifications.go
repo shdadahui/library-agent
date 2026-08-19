@@ -6,8 +6,8 @@ import (
 
 // NotificationView 通知视图（含未读数）。
 type NotificationView struct {
-	Items    []store.Notification `json:"items"`
-	Unread   int                  `json:"unread"`
+	Items  []store.Notification `json:"items"`
+	Unread int                  `json:"unread"`
 }
 
 // Notifications 读者通知列表 + 未读数。

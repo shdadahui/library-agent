@@ -1,6 +1,5 @@
 package api
 
-
 import (
 	"net/http"
 	"strconv"
@@ -121,7 +120,6 @@ func (s *Server) handleAdminAddBook(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusCreated, b)
 }
-
 
 // ---- 管理端扩展：书目管理 / 借阅记录 / 读者管理 ----
 
