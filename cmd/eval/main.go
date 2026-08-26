@@ -44,6 +44,7 @@ type HistoryMsg struct {
 type EvalCase struct {
 	ID            string       `json:"id"`
 	Category      string       `json:"category"`
+	Difficulty    string       `json:"difficulty,omitempty"` // L1 单工具 / L2 两工具编排 / L3 复杂编排与鲁棒性
 	Patron        string       `json:"patron"`
 	Input         string       `json:"input"`
 	History       []HistoryMsg `json:"history,omitempty"`
@@ -66,6 +67,7 @@ type Suite struct {
 type CaseResult struct {
 	ID          string   `json:"id"`
 	Category    string   `json:"category"`
+	Difficulty  string   `json:"difficulty,omitempty"`
 	Input       string   `json:"input"`
 	Pass        bool     `json:"pass"`
 	Reason      string   `json:"reason"`
@@ -124,6 +126,7 @@ func main() {
 	mock := flag.Bool("mock", false, "强制 mock 模式（不调用真实 LLM）")
 	providerFlag := flag.String("provider", "", "覆盖 activeProvider（运行时切换供应商，如 sensenova）")
 	only := flag.String("only", "", "只运行指定用例 ID")
+	filter := flag.String("filter", "", "按难度过滤：L1 / L2 / L3")
 	retry := flag.Int("retry", 1, "执行出错（LLM 请求失败等）时的重试次数")
 	outPath := flag.String("out", "", "报告输出路径（默认 data/eval/report-<ts>.json）")
 	flag.Parse()
@@ -166,6 +169,9 @@ func main() {
 		if *only != "" && c.ID != *only {
 			continue
 		}
+		if *filter != "" && c.Difficulty != *filter {
+			continue
+		}
 		if *mock && c.RealOnly {
 			fmt.Printf("[SKIP] %-10s %-8s %s（仅真实 LLM 模式）\n", c.ID, c.Category, c.Input)
 			skipped++
@@ -200,15 +206,81 @@ func main() {
 	if total > 0 {
 		rate = float64(pass) / float64(total) * 100
 	}
+	// 按难度统计
+	type stat struct{ pass, total int }
+	byDiff := map[string]*stat{}
+	byCat := map[string]*stat{}
+	failedList := []CaseResult{}
+	for _, r := range results {
+		if _, ok := byDiff[r.Difficulty]; !ok {
+			byDiff[r.Difficulty] = &stat{}
+		}
+		byDiff[r.Difficulty].total++
+		if r.Pass {
+			byDiff[r.Difficulty].pass++
+		} else {
+			failedList = append(failedList, r)
+		}
+		if _, ok := byCat[r.Category]; !ok {
+			byCat[r.Category] = &stat{}
+		}
+		byCat[r.Category].total++
+		if r.Pass {
+			byCat[r.Category].pass++
+		}
+	}
+	// 失败归因
+	reasonBucket := func(r CaseResult) string {
+		switch {
+		case strings.Contains(r.Reason, "最终回复未包含"):
+			return "结果未落地"
+		case strings.Contains(r.Reason, "参数"), strings.Contains(r.Reason, "未调用"):
+			return "参数错误"
+		case strings.Contains(r.Reason, "执行出错"):
+			return "执行异常"
+		default:
+			return "工具序列不符"
+		}
+	}
+	attr := map[string]int{}
+	for _, r := range failedList {
+		attr[reasonBucket(r)]++
+	}
+
 	fmt.Printf("\n==== 评测汇总 ====\n")
 	fmt.Printf("用例 %d | 通过 %d | 失败 %d | 跳过 %d | 通过率 %.1f%% | 耗时 %s | 模式 %s\n",
 		total, pass, fail, skipped, rate, elapsed.Round(time.Millisecond), providerMode(cfg, *mock))
+	fmt.Printf("难度分布：")
+	keys := []string{"L1", "L2", "L3"}
+	for _, k := range keys {
+		if st, ok := byDiff[k]; ok {
+			pct := 0.0
+			if st.total > 0 {
+				pct = float64(st.pass) / float64(st.total) * 100
+			}
+			fmt.Printf(" %s %d/%d (%.1f%%) |", k, st.pass, st.total, pct)
+		}
+	}
+	fmt.Printf("\n")
+	if len(attr) > 0 {
+		fmt.Printf("失败归因：")
+		for k, v := range attr {
+			fmt.Printf(" %s %d |", k, v)
+		}
+		fmt.Printf("\n")
+		for _, r := range failedList {
+			fmt.Printf("  FAIL %-10s [%s] %s → %s\n", r.ID, r.Difficulty, r.Category, r.Reason)
+		}
+	}
 
 	report := map[string]any{
 		"generated_at": time.Now().Format(time.RFC3339),
 		"mode":         providerMode(cfg, *mock),
 		"total":        total, "pass": pass, "fail": fail, "skipped": skipped, "pass_rate": rate,
 		"elapsed_sec": elapsed.Seconds(),
+		"difficulty":  byDiff,
+		"categories":  byCat,
+		"fail_attr":   attr,
 		"results":     results,
 	}
 	out := *outPath
@@ -233,7 +305,7 @@ func main() {
 // runCase 在隔离内存库中执行单个用例。
 func runCase(c EvalCase, cfg *config.Config, forceMock bool) CaseResult {
 	start := time.Now()
-	res := CaseResult{ID: c.ID, Category: c.Category, Input: c.Input}
+	res := CaseResult{ID: c.ID, Category: c.Category, Difficulty: c.Difficulty, Input: c.Input}
 
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -269,7 +341,7 @@ func runCase(c EvalCase, cfg *config.Config, forceMock bool) CaseResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	_, err = loop.Run(ctx, patron, history, c.Input, col.emit)
+	_, _, err = loop.Run(ctx, patron, history, c.Input, col.emit)
 	res.FinalText = truncate(col.text.String(), 120)
 	res.LatencySec = time.Since(start).Seconds()
 	if err != nil {
