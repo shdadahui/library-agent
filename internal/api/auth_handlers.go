@@ -21,10 +21,12 @@ func hashIP(ip string) int64 {
 // clientIP 提取客户端 IP：优先 X-Forwarded-For（nginx 反代），
 // 否则从 RemoteAddr 剥离端口（RemoteAddr 形如 "127.0.0.1:53211"，
 // 若直接入 key 会因端口变化导致限流永不触发）。
+// XFF 取最后一个元素：nginx（$proxy_add_x_forwarded_for）在链尾追加直连 IP，
+// 第一个元素由客户端任意伪造，取最后一个才是代理观察到的真实来源。
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+		return strings.TrimSpace(parts[len(parts)-1])
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -112,8 +114,17 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"token": token, "user": user})
 }
 
+// loginRatePerWindow 单 IP 登录尝试上限（防分布式爆破/脚本撞库）。
+const loginRatePerWindow = 20
+
 // handleLogin 登录。
+// 防爆破：单 IP 15 分钟内最多 20 次尝试（与按用户名锁定互补）。
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if err := s.Auth.CheckRate("login_rate:", hashIP(clientIP(r)), loginRatePerWindow, 15*time.Minute); err != nil {
+		s.metrics.IncRateLimited()
+		writeErr(w, http.StatusTooManyRequests, "登录尝试过于频繁，请稍后再试")
+		return
+	}
 	var body LoginRequest
 	if !decodeBody(w, r, &body) {
 		return

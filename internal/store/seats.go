@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"errors"
-	"time"
 )
 
 // Seat 座位（区域 + 排/列网格布局）。
@@ -220,23 +219,12 @@ var slotEnd = map[string]string{
 	"morning": "12:00", "afternoon": "17:00", "evening": "22:00",
 }
 
-// seatReservationExpired 判断预约是否已过期：
-// - 预约日期早于今天 → 过期
-// - 今天且时段已结束且未签到（active）→ 过期（超时未到，自动释放）
-// - 今天已签到（checked_in）且时段已结束 → 释放实时占用（记录保留表示用过）
+// seatReservationExpired 判断预约是否已过期：仅跨天的历史记录需要清理。
+// 设计说明：曾按"当天时段结束即过期"清理，导致时间炸弹——17:00 后预约下午场会被立即判过期并释放座位
+// （同一段测试代码上午跑通过、下午跑失败）。正确语义：当天预约在当天保持有效（占用该时段），
+// 次日由惰性清理统一置为 expired；"不许预约已结束时段"由 service 层在预约时拦截。
 func seatReservationExpired(date, slot, status string) bool {
-	today := Now()
-	if date < today {
-		return true
-	}
-	if date > today {
-		return false
-	}
-	end, ok := slotEnd[slot]
-	if !ok {
-		return false
-	}
-	return time.Now().Format("15:04") >= end
+	return date < Now()
 }
 
 // ExpireStaleSeatReservations 惰性清理过期预约：

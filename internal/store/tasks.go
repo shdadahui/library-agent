@@ -98,17 +98,19 @@ type TrendPoint struct {
 	Return   int    `json:"return"`
 }
 
-// LoanTrend 近 N 日借出/归还趋势（按 checkout_date / checkin_date 统计）。
+// LoanTrend 近 N 日借出/归还趋势（两条 GROUP BY 聚合，替代逐日 COUNT）。
 func (s *Store) LoanTrend(days int, today string) ([]TrendPoint, error) {
 	from, _ := timeParse(today)
 	from = from.AddDate(0, 0, -(days - 1))
-	out := []TrendPoint{}
+	byDay, err := s.LoanTrendRange(from.Format("2006-01-02"), today)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TrendPoint, 0, days)
 	for i := 0; i < days; i++ {
 		d := from.AddDate(0, 0, i).Format("2006-01-02")
-		var c, r int
-		_ = s.DB.QueryRow(`SELECT COUNT(*) FROM loans WHERE checkout_date=?`, d).Scan(&c)
-		_ = s.DB.QueryRow(`SELECT COUNT(*) FROM loans WHERE checkin_date=?`, d).Scan(&r)
-		out = append(out, TrendPoint{Date: d, Checkout: c, Return: r})
+		p := byDay[d]
+		out = append(out, TrendPoint{Date: d, Checkout: p.Checkout, Return: p.Return})
 	}
 	return out, nil
 }

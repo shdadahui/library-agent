@@ -38,14 +38,18 @@ func (s *Service) ReadingReport(patronID int64) (*ReadingReport, error) {
 	if err != nil {
 		return nil, ErrPatronNotFound
 	}
-	history, err := s.st.LoanHistory(patronID)
+	history, err := s.st.LoanHistoryWithBook(patronID)
+	if err != nil {
+		return nil, err
+	}
+	// 读过的书目（去重，含作者/主题）一条 JOIN 取齐
+	readBooks, err := s.st.BorrowedBiblios(patronID)
 	if err != nil {
 		return nil, err
 	}
 	rep := &ReadingReport{PatronName: patron.Name}
 	authors := map[string]int{}
 	subjects := map[string]int{}
-	books := map[int64]bool{}
 	monthly := map[string]int{}
 
 	for _, l := range history {
@@ -61,26 +65,17 @@ func (s *Service) ReadingReport(patronID int64) (*ReadingReport, error) {
 		} else if l.DueDate < store.Now() {
 			rep.OverdueCount++
 		}
-		it, err := s.st.GetItem(l.ItemID)
-		if err != nil {
-			continue
+		if len(l.CheckoutDate) >= 7 {
+			monthly[l.CheckoutDate[:7]]++
 		}
-		b, err := s.st.GetBiblio(it.BiblioID)
-		if err != nil {
-			continue
-		}
-		if !books[b.ID] {
-			books[b.ID] = true
-			rep.UniqueBooks++
-		}
+	}
+	rep.UniqueBooks = len(readBooks)
+	for _, b := range readBooks {
 		if b.Author != "" {
 			authors[b.Author]++
 		}
 		for _, k := range tokenize(b.Subjects) {
 			subjects[k]++
-		}
-		if len(l.CheckoutDate) >= 7 {
-			monthly[l.CheckoutDate[:7]]++
 		}
 	}
 	// 最近 6 个月趋势
@@ -116,18 +111,18 @@ func (s *Service) HotBooks(limit int) ([]Recommendation, error) {
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]int64, len(hot))
+	for i, h := range hot {
+		ids[i] = h.Biblio.ID
+	}
+	counts, err := s.st.ItemCountsByBiblio(ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Recommendation, 0, len(hot))
 	for _, h := range hot {
-		avail := 0
-		if items, err := s.st.ListItems(h.Biblio.ID); err == nil {
-			for _, it := range items {
-				if it.Status == "available" {
-					avail++
-				}
-			}
-		}
 		out = append(out, Recommendation{
-			Biblio: h.Biblio, Available: avail, Score: h.BorrowCount,
+			Biblio: h.Biblio, Available: counts[h.Biblio.ID].Available, Score: h.BorrowCount,
 			Reasons: []string{"被借 " + itoa(h.BorrowCount) + " 次"},
 		})
 	}

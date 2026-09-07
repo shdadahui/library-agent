@@ -56,6 +56,7 @@ type ChatRequest struct {
 	Messages      []Message      `json:"messages"`
 	Tools         []Tool         `json:"tools,omitempty"`
 	Temperature   float64        `json:"temperature"`
+	MaxTokens     int            `json:"max_tokens,omitempty"` // 输出上限（0 = 不设置，交给供应商默认）
 	Stream        bool           `json:"stream"`
 	StreamOptions map[string]any `json:"stream_options,omitempty"` // include_usage 获取 token 用量
 }

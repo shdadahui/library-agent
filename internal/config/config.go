@@ -39,6 +39,7 @@ type Config struct {
 	ActiveProvider string              `json:"activeProvider"`
 	Temperature    float64             `json:"temperature"`
 	MaxIterations  int                 `json:"maxIterations"`
+	MaxTokens      int                 `json:"maxTokens"` // 单次补全输出上限；-1 表示不限制
 	DB             DBConfig            `json:"db"`
 	Redis          RedisConfig         `json:"redis"`
 	Auth           AuthConfig          `json:"auth"`
@@ -80,6 +81,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Temperature == 0 {
 		cfg.Temperature = 0.7
+	}
+	if cfg.MaxTokens == 0 {
+		cfg.MaxTokens = 2048 // 默认输出上限，防失控长回复刷费
 	}
 	if cfg.DB.Driver == "" {
 		cfg.DB.Driver = "sqlite"

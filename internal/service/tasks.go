@@ -45,12 +45,15 @@ func (s *Service) CheckDueLoansNow() {
 		if ok {
 			continue // 已提醒过
 		}
-		_, _ = s.st.CreateNotification(&store.Notification{
+		if _, err := s.st.CreateNotification(&store.Notification{
 			PatronID: d.PatronID, Type: typ, Title: title,
 			Body:      "您借阅的《" + d.Title + "》应还日期为 " + d.DueDate + "，" + dueAction(d.Overdue),
 			RefID:     d.LoanID,
 			CreatedAt: store.NowDateTime(),
-		})
+		}); err != nil {
+			// 不吞错：提醒写入失败必须外显（曾因静默失败导致通知长期未生成）
+			log.Printf("到期提醒写入失败 patron=%d loan=%d: %v", d.PatronID, d.LoanID, err)
+		}
 	}
 }
 
@@ -61,9 +64,11 @@ func dueAction(overdue bool) string {
 	return "请按时归还或及时续借"
 }
 
-// RecordLoginLog 登录成功/失败审计。
+// RecordLoginLog 登录成功/失败审计（审计日志失败必须外显，不静默吞错）。
 func (s *Service) RecordLoginLog(userID int64, username, ip string, success bool) {
-	_ = s.st.InsertLoginLog(userID, username, ip, success)
+	if err := s.st.InsertLoginLog(userID, username, ip, success); err != nil {
+		log.Printf("登录审计写入失败 user=%s success=%v: %v", username, success, err)
+	}
 }
 
 // AdminLoginLogs 登录日志分页。

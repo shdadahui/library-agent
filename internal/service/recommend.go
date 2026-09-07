@@ -48,24 +48,18 @@ func (s *Service) RecommendForPatron(patronID int64, taste string, limit int) ([
 	interest := map[string]int{} // 关键词 → 权重
 	borrowedSet := map[int64]bool{}
 
-	// 1. 借阅历史构建兴趣画像
+	// 1. 借阅历史构建兴趣画像（一条 JOIN 取齐读过的书目）
 	if patronID > 0 {
-		history, _ := s.st.LoanHistory(patronID)
-		for _, l := range history {
-			it, err := s.st.GetItem(l.ItemID)
-			if err != nil {
-				continue
-			}
-			borrowedSet[it.BiblioID] = true
-			b, err := s.st.GetBiblio(it.BiblioID)
-			if err != nil {
-				continue
-			}
-			for _, k := range tokenize(b.Subjects) {
-				interest[k]++
-			}
-			if b.Author != "" {
-				interest[b.Author]++ // 喜欢的作者权重
+		readBooks, err := s.st.BorrowedBiblios(patronID)
+		if err == nil {
+			for _, b := range readBooks {
+				borrowedSet[b.ID] = true
+				for _, k := range tokenize(b.Subjects) {
+					interest[k]++
+				}
+				if b.Author != "" {
+					interest[b.Author]++ // 喜欢的作者权重
+				}
 			}
 		}
 	}
@@ -145,6 +139,11 @@ func (s *Service) RecommendForPatron(patronID int64, taste string, limit int) ([
 	if err != nil {
 		return nil, err
 	}
+	// 全库可借状态一次取齐（替代逐书查询副本）
+	itemCounts, err := s.st.AllItemCounts()
+	if err != nil {
+		return nil, err
+	}
 	// 4. 评分
 	var ranked []Recommendation
 	for _, b := range books {
@@ -174,13 +173,7 @@ func (s *Service) RecommendForPatron(patronID int64, taste string, limit int) ([
 			why = append(why, "与您借过的书相关")
 		}
 		// 可借加分（推荐可借的书）
-		items, _ := s.st.ListItems(b.ID)
-		avail := 0
-		for _, it := range items {
-			if it.Status == "available" {
-				avail++
-			}
-		}
+		avail := itemCounts[b.ID].Available
 		rec.Available = avail
 		if avail > 0 {
 			score += 2

@@ -1,0 +1,11 @@
+# 统一换行符：仓库内一律存 LF，检出时不随平台转换
+# 背景：Windows 端 core.autocrlf=true 时，同一文件会在 LF / CRLF 之间来回漂移，
+# 导致 gofmt 时而报脏、diff 整文件变化（曾真实发生：Python 脚本改完 Go 文件后 5 个文件标脏）。
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.db  binary
+*.exe binary

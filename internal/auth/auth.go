@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"unicode"
 
 	"github.com/shdadahui/library-agent/internal/store"
 	"golang.org/x/crypto/bcrypt"
@@ -16,6 +17,7 @@ import (
 // 业务错误。
 var (
 	ErrUserExists        = errors.New("用户名已存在")
+	ErrWeakPassword      = errors.New("密码至少 6 位且需同时包含字母和数字，不能含空格")
 	ErrInvalidCredential = errors.New("用户名或密码错误")
 	ErrSessionInvalid    = errors.New("会话无效或已过期")
 	ErrTooManyAttempts   = errors.New("登录失败次数过多，请 15 分钟后再试")
@@ -56,7 +58,33 @@ func NewToken() string {
 }
 
 // Register 注册：创建读者（姓名）+ 登录用户。
+// CheckPasswordStrength 密码强度校验（领域层强制，任何注册入口都不能绕过）。
+func CheckPasswordStrength(pw string) error {
+	if len(pw) < 6 {
+		return ErrWeakPassword
+	}
+	hasLetter, hasDigit := false, false
+	for _, c := range pw {
+		switch {
+		case unicode.IsLetter(c):
+			hasLetter = true
+		case unicode.IsDigit(c):
+			hasDigit = true
+		case c == ' ' || c == '\t':
+			return ErrWeakPassword
+		}
+	}
+	if !hasLetter || !hasDigit {
+		return ErrWeakPassword
+	}
+	return nil
+}
+
 func (m *Manager) Register(username, password, name string) (*store.User, error) {
+	// 强度校验放在领域层：API/CLI/管理端/工具等任何入口都必须满足
+	if err := CheckPasswordStrength(password); err != nil {
+		return nil, err
+	}
 	if _, err := m.st.GetUserByUsername(username); err == nil {
 		return nil, ErrUserExists
 	}

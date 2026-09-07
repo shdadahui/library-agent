@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shdadahui/library-agent/internal/agent"
 	"github.com/shdadahui/library-agent/internal/auth"
@@ -24,6 +25,9 @@ const maxContextMessages = 20
 
 // chatRatePerMin 每用户每分钟最大对话请求数（防恶意刷 token 成本）。
 const chatRatePerMin = 30
+
+// maxMessageRunes 单条消息长度上限（控制直达 LLM 的输入规模）。
+const maxMessageRunes = 8000
 
 // handleChat SSE 流式聊天端点。
 // 事件流：event: message / tool_call / tool_result / done / error，data 为 JSON。
@@ -46,6 +50,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Message == "" {
 		writeErr(w, http.StatusBadRequest, "message 不能为空")
+		return
+	}
+	if utf8.RuneCountInString(body.Message) > maxMessageRunes {
+		writeErr(w, http.StatusBadRequest, "消息过长（最多 8000 字）")
 		return
 	}
 	patron, err := s.Svc.Patron(user.PatronID)
@@ -146,11 +154,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeSSE(ev.Type, ev.Data)
 	}
 
-	finalText, runErr := s.Loop.Run(r.Context(), patron, history, body.Message, emit)
+	finalText, usage, runErr := s.Loop.Run(r.Context(), patron, history, body.Message, emit)
 	latency := time.Since(start)
-	// token 用量统计（本轮累计）
-	promptTok := int64(s.Loop.Usage.PromptTokens)
-	completionTok := int64(s.Loop.Usage.CompletionTokens)
+	// token 用量统计（本轮累计，由 Run 返回——共享字段在并发对话间会串台）
+	promptTok := int64(usage.PromptTokens)
+	completionTok := int64(usage.CompletionTokens)
 	if promptTok > 0 || completionTok > 0 {
 		s.metrics.AddTokens(promptTok, completionTok)
 	}

@@ -22,6 +22,9 @@ func (s *Server) handleHotBooks(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 {
 		limit = 10
 	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
 	hot, err := s.Svc.HotBooks(limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -35,6 +38,9 @@ func (s *Server) handleNewBooks(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 10
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 	books, err := s.Svc.NewBooks(limit)
 	if err != nil {

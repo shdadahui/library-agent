@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -16,6 +17,7 @@ func openMySQL(dsn string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute) // 避免长命连接被 MySQL wait_timeout 静默掐断
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("连接 MySQL 失败（请确认 docker compose 已启动）: %w", err)

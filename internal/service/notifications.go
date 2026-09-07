@@ -1,6 +1,8 @@
 package service
 
 import (
+	"log"
+
 	"github.com/shdadahui/library-agent/internal/store"
 )
 
@@ -28,11 +30,13 @@ func (s *Service) MarkNotificationsRead(patronID int64) error {
 	return s.st.MarkAllNotificationsRead(patronID)
 }
 
-// notify 创建通知（内部助手）。
+// notify 创建通知（内部助手；写入失败必须外显——曾因静默吞错导致通知长期未生成）。
 func (s *Service) notify(patronID int64, typ, title, body string) {
-	_, _ = s.st.CreateNotification(&store.Notification{
+	if _, err := s.st.CreateNotification(&store.Notification{
 		PatronID: patronID, Type: typ, Title: title, Body: body, CreatedAt: store.NowDateTime(),
-	})
+	}); err != nil {
+		log.Printf("通知写入失败 patron=%d type=%s: %v", patronID, typ, err)
+	}
 }
 
 // NotifyHoldReady 预约到书通知（还书唤醒预约时调用）。

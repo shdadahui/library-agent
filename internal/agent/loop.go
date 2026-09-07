@@ -26,7 +26,6 @@ type Loop struct {
 	Cfg     *config.Config
 	Tools   []*ToolDef
 	MaxIter int
-	Usage   Usage // 最近一次 Run 的累计 token 用量（供 metrics/日志消费）
 }
 
 // NewLoop 创建编排器。
@@ -48,15 +47,16 @@ func NewLoop(cfg *config.Config, svc *service.Service) *Loop {
 
 // Run 执行一次对话：LLM tool calling 循环。
 // history 为之前的对话（user/assistant 文本消息，不含工具中间过程），用于多轮上下文；
-// emit 用于推送流式事件；返回最终回复文本。
-func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message, userMsg string, emit func(Event)) (string, error) {
+// emit 用于推送流式事件；返回最终回复文本与本轮 token 用量。
+// usage 作为返回值而非 Loop 字段：Loop 是全请求共享的单例，字段会在并发对话间竞争/串台。
+func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message, userMsg string, emit func(Event)) (string, Usage, error) {
+	var usage Usage
 	// 意图预过滤：无关主题/纯闲聊直接本地回复，不调用 LLM（节省 token）
 	if reply, ok := l.preFilterReply(userMsg); ok {
 		emit(Event{Type: "message", Data: map[string]string{"delta": reply}})
 		emit(Event{Type: "done", Data: map[string]any{}})
-		return reply, nil
+		return reply, usage, nil
 	}
-	l.Usage = Usage{} // 清零本轮统计
 
 	system := l.buildSystemPrompt(patron)
 	messages := []Message{{Role: "system", Content: system}}
@@ -72,7 +72,7 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 	messages = append(messages, Message{Role: "user", Content: userMsg})
 
 	if l.Cfg.Active().IsMock() {
-		return l.runMock(ctx, patron, userMsg, emit), nil
+		return l.runMock(ctx, patron, userMsg, emit), usage, nil
 	}
 
 	var finalText strings.Builder
@@ -81,6 +81,9 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 			Messages:    messages,
 			Tools:       ToOpenAI(l.Tools),
 			Temperature: l.Cfg.Temperature,
+		}
+		if l.Cfg.MaxTokens > 0 {
+			req.MaxTokens = l.Cfg.MaxTokens // 输出上限（防失控长回复刷费）
 		}
 		var res *ChatResult
 		var err error
@@ -99,11 +102,11 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 		}
 		if err != nil {
 			emit(Event{Type: "error", Data: map[string]string{"message": err.Error()}})
-			return finalText.String(), err
+			return finalText.String(), usage, err
 		}
 		// token 用量累计（供应商支持时）
-		l.Usage.PromptTokens += res.Usage.PromptTokens
-		l.Usage.CompletionTokens += res.Usage.CompletionTokens
+		usage.PromptTokens += res.Usage.PromptTokens
+		usage.CompletionTokens += res.Usage.CompletionTokens
 		toolCalls := res.ToolCalls
 		content := res.Content
 		if len(toolCalls) == 0 {
@@ -127,7 +130,7 @@ func (l *Loop) Run(ctx context.Context, patron *store.Patron, history []Message,
 		emit(Event{Type: "message", Data: map[string]string{"delta": "\n"}})
 	}
 	emit(Event{Type: "done", Data: map[string]any{}})
-	return finalText.String(), nil
+	return finalText.String(), usage, nil
 }
 
 // maxToolResultLen 回传 LLM 的工具结果最大长度（超长截断，控制上下文 token）。
@@ -151,9 +154,14 @@ func (l *Loop) executeTool(ctx context.Context, patron *store.Patron, tc ToolCal
 		emit(Event{Type: "tool_result", Data: map[string]any{"id": tc.ID, "name": tc.Function.Name, "error": msg}})
 		return jsonMsg(map[string]any{"error": msg})
 	}
-	// 工具参数中若缺 patron_id 且工具需要，自动注入当前读者（身份由会话注入）
-	if _, need := args["patron_id"]; !need && patron != nil {
-		args["patron_id"] = patron.ID
+	// 身份权威注入：工具 schema 声明了 patron_id 时，一律以会话读者覆盖
+	// （忽略 LLM 提供的值，防止提示注入/参数伪造越权操作他人账户）
+	if patron != nil && def.Parameters != nil {
+		if props, ok := def.Parameters["properties"].(map[string]any); ok {
+			if _, need := props["patron_id"]; need {
+				args["patron_id"] = patron.ID
+			}
+		}
 	}
 	// schema 校验：required/类型/枚举（不合法回传错误，让 LLM 自行修正后重试）
 	if err := validateArgs(def, args); err != nil {

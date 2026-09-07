@@ -9,27 +9,10 @@ import (
 
 // handleAdminUsers 全部用户（管理员）。
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	patrons, err := s.Svc.Patrons()
+	out, err := s.Svc.AdminUserRows()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	out := make([]map[string]any, 0, len(patrons))
-	for _, p := range patrons {
-		// 关联该读者的登录账号（若有）
-		row := map[string]any{
-			"id": p.ID, "name": p.Name, "barcode": p.Barcode, "phone": p.Phone, "vip": p.Vip,
-		}
-		if user, err := s.Svc.FindUserByPatronID(p.ID); err == nil {
-			row["username"] = user.Username
-			row["user_id"] = user.ID
-			row["role"] = user.Role
-		}
-		// 当前在借数
-		if loans, err := s.Svc.PatronLoans(p.ID); err == nil {
-			row["active_loans"] = len(loans)
-		}
-		out = append(out, row)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -53,14 +36,13 @@ func (s *Server) handleAdminStats(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	totalPatrons, _ := s.Svc.Patrons()
 	out := map[string]any{
 		"books":             stats.Books,
 		"copies":            stats.Copies,
 		"available":         stats.Available,
 		"borrowed":          stats.Borrowed,
 		"holds_waiting":     stats.HoldsWaiting,
-		"patrons":           len(totalPatrons),
+		"patrons":           stats.Patrons,
 		"unpaid_fines_yuan": float64(stats.UnpaidFinesCents) / 100,
 	}
 	writeJSON(w, http.StatusOK, out)

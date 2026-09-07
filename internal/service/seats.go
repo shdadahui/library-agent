@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
@@ -101,6 +102,19 @@ func (s *Service) Seats(area, seatType string) ([]SeatView, error) {
 }
 
 // AvailableSeats 指定日期时段的可预约座位。
+// slotEnded 判断时段今天是否已结束（用于预约时拦截）。
+func slotEnded(slot string) bool {
+	end, ok := slotEndTime[slot]
+	if !ok {
+		return false
+	}
+	return time.Now().Format("15:04") >= end
+}
+
+var slotEndTime = map[string]string{
+	"morning": "12:00", "afternoon": "17:00", "evening": "22:00",
+}
+
 func (s *Service) AvailableSeats(date, slot string) ([]SeatView, error) {
 	if !validSlot(slot) {
 		return nil, ErrSeatSlotInvalid
@@ -122,6 +136,10 @@ func (s *Service) AvailableSeats(date, slot string) ([]SeatView, error) {
 
 // ReserveSeat 预约座位（原子：冲突校验在 INSERT..WHERE NOT EXISTS 中完成，并发安全）。
 func (s *Service) ReserveSeat(patronID, seatID int64, date, slot string) (*store.SeatReservation, error) {
+	// 不允许预约已过去的时段（否则"预约即失效"，体验与数据都别扭）
+	if date == store.Now() && slotEnded(slot) {
+		return nil, ErrSeatSlotInvalid
+	}
 	if !validSlot(slot) {
 		return nil, ErrSeatSlotInvalid
 	}
@@ -195,8 +213,12 @@ func (s *Service) CheckinSeat(patronID, resID int64) (*store.SeatReservation, er
 	if !ok {
 		return nil, ErrSeatReservationClosed
 	}
-	// 占用座位（实时状态）
-	_ = s.st.UpdateSeatStatus(r.SeatID, "occupied")
+	// 占用座位（实时状态）。不吞错：签到已成功但座位状态未更新会造成
+	// "预约已签到/座位仍空闲"的静默不一致，必须外显。
+	if err := s.st.UpdateSeatStatus(r.SeatID, "occupied"); err != nil {
+		log.Printf("座位占用状态更新失败 seat=%d res=%d: %v", r.SeatID, resID, err)
+		return nil, err
+	}
 	return s.st.GetSeatReservation(resID)
 }
 

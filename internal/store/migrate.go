@@ -54,6 +54,9 @@ var migrations = []migration{
 	{Version: 18, SQL: `ALTER TABLE ratings MODIFY COLUMN id BIGINT NOT NULL AUTO_INCREMENT`, Driver: "mysql", Desc: "MySQL 自增主键"},
 	{Version: 19, SQL: `CREATE UNIQUE INDEX idx_fav_unique ON favorites(patron_id, biblio_id)`, Desc: "收藏唯一约束（防并发/重复收藏）"},
 	{Version: 20, SQL: `CREATE UNIQUE INDEX idx_rate_unique ON ratings(patron_id, biblio_id)`, Desc: "评分唯一约束（并发 upsert 只留一条）"},
+	{Version: 21, SQL: `CREATE INDEX idx_loans_due ON loans(status, due_date)`, Desc: "到期/逾期扫描索引（每小时任务原为全表扫）"},
+	{Version: 22, SQL: `CREATE INDEX idx_loans_checkout ON loans(checkout_date)`, Desc: "借出日期索引（趋势/报表按日聚合）"},
+	{Version: 23, SQL: `CREATE INDEX idx_loans_checkin ON loans(checkin_date)`, Desc: "归还日期索引（趋势/报表按日聚合）"},
 }
 
 type migration struct {

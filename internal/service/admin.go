@@ -3,9 +3,41 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/shdadahui/library-agent/internal/store"
 )
+
+// AdminUserRows 管理端用户列表：读者 + 关联登录账号 + 当前在借数。
+// 三条批量查询（读者表 / 用户表 / 在借 GROUP BY），替代此前逐读者的 N+1。
+func (s *Service) AdminUserRows() ([]map[string]any, error) {
+	patrons, err := s.st.ListPatrons()
+	if err != nil {
+		return nil, err
+	}
+	users, err := s.st.AllUsersByPatron()
+	if err != nil {
+		return nil, err
+	}
+	loanCounts, err := s.st.ActiveLoanCountsByPatron()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]map[string]any, 0, len(patrons))
+	for _, p := range patrons {
+		row := map[string]any{
+			"id": p.ID, "name": p.Name, "barcode": p.Barcode, "phone": p.Phone, "vip": p.Vip,
+			"active_loans": loanCounts[p.ID],
+		}
+		if u := users[p.ID]; u != nil {
+			row["username"] = u.Username
+			row["user_id"] = u.ID
+			row["role"] = u.Role
+		}
+		out = append(out, row)
+	}
+	return out, nil
+}
 
 // CheckoutByBarcode 馆员借出登记：读者条码 + 图书条码 → 办理借出。
 func (s *Service) CheckoutByBarcode(patronBarcode, itemBarcode string) (*store.Loan, error) {
@@ -47,10 +79,12 @@ func (s *Service) AdminAddBook(title, author, isbn, publisher, subjects string, 
 	}
 	loc := locationForBook(subjects)
 	for i := 0; i < copies; i++ {
-		_, _ = s.st.InsertItem(&store.Item{
+		if _, err := s.st.InsertItem(&store.Item{
 			BiblioID: id, Barcode: fmt.Sprintf("LIB-%05d-%d", id, i+1),
 			Status: "available", Location: loc, LoanDurationDays: 14,
-		})
+		}); err != nil {
+			log.Printf("副本创建失败 biblio=%d 第%d本: %v", id, i+1, err)
+		}
 	}
 	return &store.Biblio{ID: id, Title: title, Author: author, Subjects: subjects, Lang: "zh"}, nil
 }

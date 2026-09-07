@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/agent"
@@ -44,7 +45,21 @@ func NewServerWithSession(cfg *config.Config, svc *service.Service, loop *agent.
 
 // Handler 返回根处理器（含请求日志与认证中间件）。
 func (s *Server) Handler() http.Handler {
-	return s.withLogging(s.withAuth(s.mux))
+	return s.withSecurityHeaders(s.withLogging(s.withAuth(s.mux)))
+}
+
+// withSecurityHeaders 基础安全响应头（防 MIME 嗅探、点击劫持、外链泄露）。
+// CSP 允许 unsafe-inline：前端为单页内联脚本，按渐进加固策略先收紧其余项。
+func (s *Server) withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "SAMEORIGIN")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'self'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // withAuth 认证中间件：受保护 API 需携带 Bearer 令牌。
@@ -104,9 +119,10 @@ func bearerToken(r *http.Request) string {
 }
 
 // isPublicPath 无需登录的公开路径。
+// /api/metrics 涉及 token 花费与调用量，须登录后访问；/api/health 保留公开供监控探针。
 func isPublicPath(path string) bool {
 	switch {
-	case path == "/api/health", path == "/api/metrics":
+	case path == "/api/health":
 		return true
 	case path == "/api/auth/register", path == "/api/auth/login":
 		return true
@@ -210,6 +226,9 @@ func (s *Server) handleSearchBooks(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
 		limit = 50
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 	books, err := s.Svc.SearchBooks(q, lang, limit)
 	if err != nil {
@@ -459,13 +478,20 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// webFileCache 静态资源内存缓存（web 目录体积小，免去每请求磁盘 I/O）。
+var webFileCache sync.Map // rel path → []byte
+
 func readWebFile(rel string) ([]byte, error) {
+	if v, ok := webFileCache.Load(rel); ok {
+		return v.([]byte), nil
+	}
 	candidates := []string{filepath.Join("web", rel)}
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "web", rel))
 	}
 	for _, p := range candidates {
 		if data, err := os.ReadFile(p); err == nil {
+			webFileCache.Store(rel, data)
 			return data, nil
 		}
 	}
@@ -487,6 +513,7 @@ func serveBytes(w http.ResponseWriter, r *http.Request, path string, data []byte
 		ct = "image/png"
 	}
 	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=300")
 	w.Write(data)
 }
 
@@ -502,7 +529,14 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 
+// maxBodyBytes 请求体大小上限（防超大 payload 打满内存/直达 LLM）。
+const maxBodyBytes = 1 << 20 // 1MB
+
+// maxListLimit 列表类端点的 limit 参数上限。
+const maxListLimit = 100
+
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		writeErr(w, http.StatusBadRequest, "请求体解析失败: "+err.Error())
 		return false

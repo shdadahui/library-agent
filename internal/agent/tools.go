@@ -191,9 +191,11 @@ func AllTools() []*ToolDef {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"taste": map[string]any{"type": "string", "description": "兴趣主题关键词，可选（如：科幻、数学、历史、小说）"},
-					"count": map[string]any{"type": "integer", "description": "推荐数量，可选，默认 5"},
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID（系统自动注入，无需提供）"},
+					"taste":     map[string]any{"type": "string", "description": "兴趣主题关键词，可选（如：科幻、数学、历史、小说）"},
+					"count":     map[string]any{"type": "integer", "description": "推荐数量，可选，默认 5"},
 				},
+				"required": []string{"patron_id"},
 			},
 			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
 				pid, _ := intArg(args, "patron_id")
@@ -219,14 +221,27 @@ func AllTools() []*ToolDef {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"loan_id": map[string]any{"type": "integer", "description": "借阅记录 ID"},
+					"loan_id":   map[string]any{"type": "integer", "description": "借阅记录 ID"},
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID（系统自动注入，无需提供）"},
 				},
-				"required": []string{"loan_id"},
+				"required": []string{"loan_id", "patron_id"},
 			},
 			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
 				lid, err := intArg(args, "loan_id")
 				if err != nil {
 					return nil, err
+				}
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				// 归属校验：仅借阅人本人可经 Agent 还书（patron_id 已由会话强制注入）
+				owner, err := s.LoanOwner(lid)
+				if err != nil {
+					return nil, err
+				}
+				if owner != pid {
+					return nil, errors.New("无权操作他人借阅记录")
 				}
 				res, err := s.Return(lid)
 				if err != nil {
@@ -246,14 +261,27 @@ func AllTools() []*ToolDef {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"loan_id": map[string]any{"type": "integer", "description": "借阅记录 ID"},
+					"loan_id":   map[string]any{"type": "integer", "description": "借阅记录 ID"},
+					"patron_id": map[string]any{"type": "integer", "description": "读者 ID（系统自动注入，无需提供）"},
 				},
-				"required": []string{"loan_id"},
+				"required": []string{"loan_id", "patron_id"},
 			},
 			Handler: func(_ context.Context, s *service.Service, args map[string]any) (any, error) {
 				lid, err := intArg(args, "loan_id")
 				if err != nil {
 					return nil, err
+				}
+				pid, err := intArg(args, "patron_id")
+				if err != nil {
+					return nil, err
+				}
+				// 归属校验：仅借阅人本人可经 Agent 续借
+				owner, err := s.LoanOwner(lid)
+				if err != nil {
+					return nil, err
+				}
+				if owner != pid {
+					return nil, errors.New("无权操作他人借阅记录")
 				}
 				loan, err := s.Renew(lid)
 				if err != nil {

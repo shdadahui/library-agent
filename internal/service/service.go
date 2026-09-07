@@ -4,9 +4,9 @@ package service
 
 import (
 	"errors"
-	"sync"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shdadahui/library-agent/internal/store"
@@ -142,20 +142,18 @@ func (s *Service) SearchBooks(q, lang string, limit int) ([]BookSearchResult, er
 	if err != nil {
 		return nil, err
 	}
+	ids := make([]int64, len(books))
+	for i, b := range books {
+		ids[i] = b.ID
+	}
+	counts, err := s.st.ItemCountsByBiblio(ids)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]BookSearchResult, 0, len(books))
 	for _, b := range books {
-		items, err := s.st.ListItems(b.ID)
-		if err != nil {
-			return nil, err
-		}
-		r := BookSearchResult{Biblio: b}
-		for _, it := range items {
-			r.Total++
-			if it.Status == "available" {
-				r.Available++
-			}
-		}
-		out = append(out, r)
+		c := counts[b.ID]
+		out = append(out, BookSearchResult{Biblio: b, Available: c.Available, Total: c.Total})
 	}
 	return out, nil
 }
@@ -214,24 +212,18 @@ type LoanView struct {
 
 // PatronLoans 读者当前在借图书。
 func (s *Service) PatronLoans(patronID int64) ([]LoanView, error) {
-	loans, err := s.st.ActiveLoans(patronID)
+	rows, err := s.st.ActiveLoansWithBook(patronID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]LoanView, 0, len(loans))
+	out := make([]LoanView, 0, len(rows))
 	today := store.Now()
-	for _, l := range loans {
-		v := LoanView{Loan: l}
-		if it, err := s.st.GetItem(l.ItemID); err == nil {
-			v.Barcode = it.Barcode
-			if b, err := s.st.GetBiblio(it.BiblioID); err == nil {
-				v.Title = b.Title
-			}
-		}
-		v.Renewable = s.renewErr(l, today) == nil
-		v.RenewMsg = ""
-		if err := s.renewErr(l, today); err != nil {
+	for _, r := range rows {
+		v := LoanView{Loan: r.Loan, Title: r.Title, Barcode: r.Barcode}
+		if err := s.renewErr(r.Loan, today); err != nil {
 			v.RenewMsg = err.Error()
+		} else {
+			v.Renewable = true
 		}
 		out = append(out, v)
 	}
@@ -240,20 +232,13 @@ func (s *Service) PatronLoans(patronID int64) ([]LoanView, error) {
 
 // LoanHistory 读者借阅历史。
 func (s *Service) LoanHistory(patronID int64) ([]LoanView, error) {
-	loans, err := s.st.LoanHistory(patronID)
+	rows, err := s.st.LoanHistoryWithBook(patronID)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]LoanView, 0, len(loans))
-	for _, l := range loans {
-		v := LoanView{Loan: l}
-		if it, err := s.st.GetItem(l.ItemID); err == nil {
-			v.Barcode = it.Barcode
-			if b, err := s.st.GetBiblio(it.BiblioID); err == nil {
-				v.Title = b.Title
-			}
-		}
-		out = append(out, v)
+	out := make([]LoanView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, LoanView{Loan: r.Loan, Title: r.Title, Barcode: r.Barcode})
 	}
 	return out, nil
 }

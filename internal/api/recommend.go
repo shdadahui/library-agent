@@ -10,6 +10,9 @@ func (s *Server) handleRecommend(w http.ResponseWriter, r *http.Request) {
 	user := currentUser(r)
 	taste := r.URL.Query().Get("taste")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
 	recs, err := s.Svc.RecommendForPatron(user.PatronID, taste, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
